@@ -28,6 +28,7 @@ namespace NaiwaCompanion
                 using (Theme theme = new Theme(assets))
                 {
                     TestHeadVisual(theme, output);
+                    TestCanvasMargin(theme);
                     if (theme.Recorded)
                     {
                         TestRecorded(theme, output);
@@ -91,7 +92,7 @@ namespace NaiwaCompanion
                         int style = Desktop.GetWindowLong(form.Handle, -20);
                         Check((style & 0x80000) != 0 && (style & 0x08000000) != 0, "layered window does not take keyboard focus");
                         Check(!form.Hit(Point.Empty), "transparent pixels are click-through");
-                        form.SetSize(110); Check(form.Width == 316, "size setting rescales window");
+                        form.SetSize(110); Check(form.ClientSize == Painter.CanvasSize(demo, 110), "size setting rescales window");
                         Check(form.Laugh() && !form.Laugh(), "native laugh rejects duplicate playback");
                         form.SetHidden(true); Check(!Desktop.IsWindowVisible(form.Handle) && !form.Laugh(), "hidden pet cannot laugh");
                         form.SetHidden(false); Check(Desktop.IsWindowVisible(form.Handle), "fullscreen recovery reveals pet");
@@ -158,13 +159,46 @@ namespace NaiwaCompanion
             { left = Math.Min(left, x); right = Math.Max(right, x + 1); top = Math.Min(top, y); bottom = Math.Max(bottom, y + 1); }
             return Rectangle.FromLTRB(left, top, right, bottom);
         }
+        private static void CheckBorder(Bitmap image)
+        {
+            byte[] pixels = Painter.ReadPixels(image); int w = image.Width, h = image.Height;
+            for (int x = 0; x < w; x++) if (pixels[x * 4 + 3] > 2 || pixels[((h - 1) * w + x) * 4 + 3] > 2) throw new Exception("opaque pixels clipped at horizontal window edge");
+            for (int y = 0; y < h; y++) if (pixels[(y * w) * 4 + 3] > 2 || pixels[(y * w + w - 1) * 4 + 3] > 2) throw new Exception("opaque pixels clipped at vertical window edge");
+        }
+        private static void TestCanvasMargin(Theme theme)
+        {
+            foreach (int percent in new int[] { 50, 85, 110, 150 })
+            {
+                foreach (double tilt in new double[] { -6.5, 0, 6.5 })
+                {
+                    Animation state = new Animation { Dragging = true, Tilt = tilt };
+                    using (Bitmap frame = Painter.Render(theme, state, percent)) CheckBorder(frame);
+                }
+                foreach (double amount in new double[] { -.09, .28 })
+                {
+                    Animation state = new Animation(); state.Head.Begin(0); state.Head.Amount = amount;
+                    using (Bitmap frame = Painter.Render(theme, state, percent)) CheckBorder(frame);
+                }
+            }
+            Check(true, "all window edges stay clear during full squash, stretch and +/-6.5 degree drag at 50-150 percent");
+            using (ActionSound sound = new ActionSound(theme.SoundBytes(true)))
+                Check(sound.Available == (theme.ReactionAction != null && theme.ReactionAction.audio != null), "head reaction sound loads independently of selected menu action");
+            if (theme.ReactionAction != null)
+            {
+                string selected = theme.SelectedAction.id;
+                Check(Math.Abs(theme.ReactionDuration - theme.ReactionAction.frames / theme.ReactionAction.fps) < .0001, "head reaction preserves complete recorded sequence duration");
+                theme.Reaction(theme.ReactionDuration * .75);
+                Check(theme.SelectedAction.id == selected, "head reaction leaves chosen menu action unchanged");
+            }
+        }
         private static void TestHeadInput(PetForm form, Theme theme, int percent)
         {
             RectangleF region = theme.HeadRegion; Point point = Point.Empty; bool found = false;
             for (int y = Math.Max(0, (int)region.Top); y < region.Bottom && !found; y++)
             for (int x = Math.Max(0, (int)region.Left); x < region.Right && !found; x++)
             {
-                Point p = new Point(x * percent / 100, y * percent / 100);
+                int pad = Painter.Padding(theme, percent);
+                Point p = new Point(pad + x * percent / 100, pad + y * percent / 100);
                 if (form.HitHead(p)) { point = p; found = true; }
             }
             Check(found && !form.HitHead(Point.Empty), "native head hit test requires visible calibrated head pixels");
@@ -194,7 +228,7 @@ namespace NaiwaCompanion
             }
             byte[] protectedIdle = Painter.ReadPixels(theme.Idle);
             a.Head.ReactionDuration = theme.ReactionDuration; a.Head.Release(.6);
-            for (int frame = 1; frame <= 140; frame++)
+            for (int frame = 1; frame <= (int)Math.Ceiling((theme.ReactionDuration + 1) * 60); frame++)
             {
                 a.Advance(.6 + frame / 60.0, PointF.Empty, theme.Duration, .24, false);
                 using (Bitmap reactionFrame = Painter.Render(theme, a, 85))
@@ -223,7 +257,9 @@ namespace NaiwaCompanion
             using (Font small = new Font("Microsoft YaHei UI", 12))
             {
                 Animation a = new Animation(); a.Head.ReactionDuration = theme.ReactionDuration;
-                for (int frame = 0; frame < 240; frame++)
+                int frames = (int)Math.Ceiling((1.25 + .32 + theme.ReactionDuration + .6) * 60);
+                File.WriteAllText(Path.Combine(output, "timing.txt"), "fps=60\nframes=" + frames + "\nreactionStart=1.57\nreactionDuration=" + theme.ReactionDuration.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                for (int frame = 0; frame < frames; frame++)
                 {
                     double t = frame / 60.0;
                     if (frame == 27) a.BeginHeadPress(t);
@@ -231,21 +267,22 @@ namespace NaiwaCompanion
                     if (frame == 75) a.Head.Release(t);
                     a.Advance(t, PointF.Empty, theme.Duration, .24, false);
                     using (Bitmap pet = Painter.Render(theme, a, 110))
-                    using (Bitmap page = new Bitmap(720, 560))
+                    using (Bitmap page = new Bitmap(800, 680))
                     using (Graphics g = Graphics.FromImage(page))
                     {
                         g.Clear(Color.FromArgb(239, 244, 247));
                         string stage = t < .45 ? "按住头部，向下压" : t < 1.25 ? "身体压扁，向两侧鼓起" : a.Head.Reacting ? theme.ReactionName : t < 2.2 ? "松手：回弹、回摆、停稳" : "恢复安静陪伴";
                         g.DrawString(stage, font, Brushes.DarkSlateGray, 28, 20);
                         g.DrawString(theme.Name + " · 程序实际渲染 · 60 帧/秒", small, Brushes.SlateGray, 28, 61);
-                        int px = (page.Width - pet.Width) / 2, py = 485 - (int)Math.Round((theme.BodyBounds.Bottom - 1) * 1.1);
+                        int pad = Painter.Padding(theme, 110);
+                        int px = (page.Width - pet.Width) / 2, py = 575 - pad - (int)Math.Round((theme.BodyBounds.Bottom - 1) * 1.1);
                         g.DrawImageUnscaled(pet, px, py);
                         if (a.Head.Held)
                         {
                             RectangleF head = theme.HeadRegion;
-                            float hx = px + (head.X + head.Width / 2) * 1.1f;
+                            float hx = px + pad + (head.X + head.Width / 2) * 1.1f;
                             float foot = (theme.BodyBounds.Bottom - 1) * 1.1f;
-                            float hy = py + foot + (head.Top * 1.1f - foot) * (float)(1 - a.Head.Amount) - 9;
+                            float hy = py + pad + foot + (head.Top * 1.1f - foot) * (float)(1 - a.Head.Amount) - 9;
                             using (Pen pen = new Pen(Color.FromArgb(205, 230, 143, 82), 3)) g.DrawEllipse(pen, hx - 9, hy - 9, 18, 18);
                         }
                         page.Save(Path.Combine(output, frame.ToString("0000") + ".png"), ImageFormat.Png);
@@ -302,6 +339,7 @@ namespace NaiwaCompanion
             foreach (RecordedAction action in theme.Manifest.actions)
             {
                 theme.SelectAction(action.id);
+                using (ActionSound sound = new ActionSound(theme.SoundBytes(false))) Check(sound.Available == (action.audio != null), action.name + ": matching WAV loads without playback");
                 Check(theme.Frames == action.frames && Math.Abs(theme.Duration - action.frames / action.fps) < .001, action.name + ": independent frame count and duration");
                 Animation state = new Animation(); state.StartLaugh(0);
                 Stopwatch sw = Stopwatch.StartNew();
@@ -310,7 +348,7 @@ namespace NaiwaCompanion
                     state.Advance(i / action.fps, PointF.Empty, theme.Duration, 1.0 / 30, false);
                     using (Bitmap image = Painter.Render(theme, state, 65))
                     {
-                        if (image.GetPixel(0, 0).A != 0 || image.GetPixel(image.Width - 1, image.Height - 1).A != 0) throw new Exception("non-transparent theme corner");
+                        CheckBorder(image);
                         if (i == action.frames / 2) image.Save(Path.Combine(output, action.id + ".png"), ImageFormat.Png);
                     }
                 }
@@ -331,7 +369,8 @@ namespace NaiwaCompanion
                     int differences = 0;
                     for (int y = 0; y < theme.Height; y++) for (int x = 0; x < theme.Width; x++)
                     {
-                        int a = (y * theme.Width + x) * 4, b = (y * theme.Width + theme.Width - 1 - x) * 4;
+                        int pad = Painter.Padding(theme, 100);
+                        int a = ((y + pad) * right.Width + x + pad) * 4, b = ((y + pad) * left.Width + pad + theme.Width - 1 - x) * 4;
                         for (int c = 0; c < 4; c++) if (Math.Abs(pixels[a + c] - mirrored[b + c]) > 2) differences++;
                     }
                     Check(differences < theme.Width * theme.Height / 100, "crawl turn mirrors body and gait consistently");
@@ -363,6 +402,7 @@ namespace NaiwaCompanion
             {
                 form.Location = new Point(-20000, -20000); form.Show(); Application.DoEvents();
                 TestHeadInput(form, another, 85);
+                Check(form.HasReactionSound == (theme.ReactionAction != null && theme.ReactionAction.audio != null), "native reaction WAV stays ready independently of menu selection");
                 form.PlayAction(first); Check(form.Animation.Laughing || (theme.CanCrawl && form.Animation.Crawling), "recorded menu action starts native playback");
                 form.SetHidden(true); Check(!form.Animation.Laughing && !form.Animation.Crawling, "recorded playback stops when hidden");
                 form.SetHidden(false); form.Close();
@@ -393,7 +433,7 @@ namespace NaiwaCompanion
         {
             Directory.CreateDirectory(output);
             using (Theme theme = new Theme(assets))
-            using (Bitmap sheet = new Bitmap(960, 620))
+            using (Bitmap sheet = new Bitmap(4 * (Painter.CanvasSize(theme, 65).Width + 30), 2 * (Painter.CanvasSize(theme, 65).Height + 65) + 70))
             using (Graphics page = Graphics.FromImage(sheet))
             using (Font heading = new Font("Microsoft YaHei UI", 13))
             using (Font title = new Font("Microsoft YaHei UI", 22, FontStyle.Bold))
@@ -414,8 +454,8 @@ namespace NaiwaCompanion
                     using (Bitmap frame = Painter.Render(theme, a, 65))
                     {
                         frame.Save(Path.Combine(output, "state-" + i + ".png"), ImageFormat.Png);
-                        int x = 20 + (i % 4) * 238, y = 70 + (i / 4) * 270;
-                        page.DrawImageUnscaled(frame, x + 15, y); page.DrawString(labels[i], heading, Brushes.DarkOliveGreen, x + 3, y + 242);
+                        int x = (i % 4) * (frame.Width + 30), y = 70 + (i / 4) * (frame.Height + 65);
+                        page.DrawImageUnscaled(frame, x + 15, y); page.DrawString(labels[i], heading, Brushes.DarkOliveGreen, x + 3, y + frame.Height + 7);
                     }
                 }
                 sheet.Save(Path.Combine(output, "preview.png"), ImageFormat.Png);
@@ -426,7 +466,7 @@ namespace NaiwaCompanion
             if (theme.CanCrawl)
             {
                 string motion = Path.Combine(output, "motion"); Directory.CreateDirectory(motion);
-                CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(0, 0, 960, 448); Size size = new Size(307, 358);
+                CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(0, 0, 1100, 640); Size size = Painter.CanvasSize(theme, 80);
                 crawl.Reset(new Point(530, 64));
                 for (int frame = 0; frame < 300; frame++)
                 {
@@ -445,7 +485,8 @@ namespace NaiwaCompanion
                 }
             }
             int count = theme.Manifest.actions.Length + 1;
-            using (Bitmap sheet = new Bitmap(260 * count, 390))
+            int cellWidth = Painter.CanvasSize(theme, 65).Width + 24, cellHeight = Painter.CanvasSize(theme, 65).Height + 100;
+            using (Bitmap sheet = new Bitmap(cellWidth * count, cellHeight))
             using (Graphics g = Graphics.FromImage(sheet))
             using (Font font = new Font("Microsoft YaHei UI", 13))
             {
@@ -455,8 +496,8 @@ namespace NaiwaCompanion
                     Animation a = new Animation(); string label = "待机 / 眼神跟随";
                     if (i > 0) { RecordedAction action = theme.Manifest.actions[i - 1]; theme.SelectAction(action.id); a.LaughAt = 0; a.Time = theme.Duration * .5; label = action.name; }
                     using (Bitmap image = Painter.Render(theme, a, 65))
-                    { image.Save(Path.Combine(output, "theme-state-" + i + ".png"), ImageFormat.Png); g.DrawImageUnscaled(image, 260 * i + 5, 50); }
-                    g.DrawString(label, font, Brushes.White, 260 * i + 12, 350);
+                    { image.Save(Path.Combine(output, "theme-state-" + i + ".png"), ImageFormat.Png); g.DrawImageUnscaled(image, cellWidth * i + 12, 50); }
+                    g.DrawString(label, font, Brushes.White, cellWidth * i + 12, cellHeight - 35);
                 }
                 sheet.Save(Path.Combine(output, "preview.png"), ImageFormat.Png);
             }

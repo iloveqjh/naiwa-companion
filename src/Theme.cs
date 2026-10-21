@@ -19,8 +19,9 @@ namespace NaiwaCompanion
         internal RecordedAction SelectedAction;
         internal bool Recorded { get { return Manifest != null; } }
         internal bool CanCrawl { get { return Recorded && Manifest.locomotionAction != null; } }
-        internal double ReactionDuration { get { return Recorded ? Manifest.id == "angel" ? 1.15 : Manifest.id == "kungfu" || Manifest.id == "taichi" ? 1.25 : CanCrawl ? 1.0 : .75 : .85; } }
-        internal string ReactionName { get { return Recorded ? Manifest.id == "angel" ? "轻闭眼，再柔和睁开" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "推掌侧目，收势回望" : CanCrawl ? "回头瞄一眼" : "安静回望" : "盯一眼，再自然眨眼"; } }
+        internal RecordedAction ReactionAction { get { return Recorded ? FindAction(Manifest.headReactionAction) : null; } }
+        internal double ReactionDuration { get { RecordedAction clip = ReactionAction; return clip != null ? clip.frames / clip.fps : Recorded ? Manifest.id == "angel" ? 1.8 : Manifest.id == "kungfu" || Manifest.id == "taichi" ? 1.25 : CanCrawl ? 3.3 : .75 : .85; } }
+        internal string ReactionName { get { return Recorded ? Manifest.id == "angel" ? "合掌祈祷，再恢复待机" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "推掌侧目，收势回望" : CanCrawl ? "回头看看，再趴着偷笑" : "安静回望" : "盯一眼，再自然眨眼"; } }
         internal bool AlignReaction { get { return CanCrawl && !HasPeek; } }
         private bool HasPeek { get { if (!Recorded) return false; foreach (RecordedAction a in Manifest.actions) if (a.id == "peek") return true; return false; } }
         internal string Name { get { return Recorded ? Manifest.name : Original ? "经典奶蛙" : "内置演示"; } }
@@ -52,7 +53,8 @@ namespace NaiwaCompanion
         }
         internal PointF? GazeOrigin(int scale)
         {
-            if (!Recorded || Manifest.eyes == null || Manifest.eyes.Length == 0) return null;
+            if (!Recorded) return new PointF(Width * .431f * scale / 100, Height * .185f * scale / 100);
+            if (Manifest.eyes == null || Manifest.eyes.Length == 0) return null;
             float x = 0, y = 0;
             foreach (EyeArea e in Manifest.eyes) { x += e.x + e.width / 2; y += e.y + e.height / 2; }
             return new PointF(x / Manifest.eyes.Length * scale / 100, y / Manifest.eyes.Length * scale / 100);
@@ -153,6 +155,8 @@ namespace NaiwaCompanion
         internal Bitmap Reaction(double time)
         {
             if (!Original || time < 0 || time >= ReactionDuration) return idle;
+            RecordedAction clip = ReactionAction;
+            if (clip != null) return Cached(clip.prefix + Math.Min(clip.frames - 1, (int)(time * clip.fps)).ToString("0000") + ".png");
             if (!Recorded)
             {
                 if (time >= .58)
@@ -160,7 +164,19 @@ namespace NaiwaCompanion
                 double p = time < .16 ? Smooth(time / .16) : time < .36 ? 1 : 1 - Smooth((time - .36) / .22);
                 return Cached("look/" + ((int)Math.Round(p * (lookFrames - 1))).ToString("00") + ".png");
             }
-            string actionId = Manifest.id == "angel" ? "chant" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "taichi" : CanCrawl ? HasPeek ? "peek" : "chuckle" : "";
+            // Older packs still get prayer and the complete chuckle rather than a short eye-only loop.
+            if (Manifest.id == "angel" || CanCrawl)
+            {
+                RecordedAction fallback = FindAction(Manifest.id == "angel" ? "prayer" : "chuckle");
+                if (fallback != null)
+                {
+                    int frame;
+                    if (CanCrawl) frame = Math.Min(fallback.frames - 1, (int)(time * fallback.fps));
+                    else { double u = time / ReactionDuration; frame = (int)Math.Round(48 + 28 * (u < .55 ? Smooth(u / .55) : 1 - Smooth((u - .55) / .45))); }
+                    return Cached(fallback.prefix + Math.Min(fallback.frames - 1, frame).ToString("0000") + ".png");
+                }
+            }
+            string actionId = Manifest.id == "kungfu" || Manifest.id == "taichi" ? "taichi" : "";
             foreach (RecordedAction action in Manifest.actions) if (action.id == actionId)
             {
                 int start = Manifest.id == "angel" ? 72 : 0;
@@ -172,6 +188,16 @@ namespace NaiwaCompanion
                 return Cached(action.prefix + frame.ToString("0000") + ".png");
             }
             return idle;
+        }
+        private RecordedAction FindAction(string id)
+        { if (Recorded && id != null) foreach (RecordedAction a in Manifest.actions) if (a.id == id) return a; return null; }
+        internal byte[] SoundBytes(bool reaction)
+        {
+            if (!Recorded) return !reaction && AudioFile != null ? File.ReadAllBytes(AudioFile) : null;
+            RecordedAction clip = reaction ? ReactionAction : SelectedAction;
+            if (clip == null || clip.audio == null) return null;
+            using (Stream input = Entry(clip.audio, 20 * 1024 * 1024).Open())
+            using (MemoryStream output = new MemoryStream()) { input.CopyTo(output); return output.ToArray(); }
         }
         private static double Smooth(double value) { value = Math.Max(0, Math.Min(1, value)); return value * value * (3 - 2 * value); }
         internal Bitmap Laugh(int frame) { return Cached((Recorded ? SelectedAction.prefix : "laugh/") + Math.Max(0, Math.Min(Frames - 1, frame)).ToString("0000") + ".png"); }

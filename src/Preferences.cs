@@ -9,6 +9,7 @@ namespace NaiwaCompanion
     internal sealed class Preferences
     {
         public int Size = 85, X = int.MinValue, Y = int.MinValue;
+        public int CanvasVersion;
         public bool Sound = false, AlwaysOnTop = true, HideFullscreen = true, FollowPointer = true;
         public string Assets = "";
         public string ThemeFolder = "";

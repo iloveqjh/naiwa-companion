@@ -29,7 +29,8 @@
 | 眼球移动幅度、原图局部变形 | `src/Painter.cs`：`Warp` |
 | 戳肚子、拖动回弹、动作时长 | `src/Animation.cs` 与 `src/Painter.cs` |
 | 按头下压、弹性与主题短反应 | `src/HeadPressMotion.cs`、`src/PetForm.cs` 手势、`src/Painter.cs` 整身变形、`src/Theme.cs` 原动作帧 |
-| 菜单、声音、全屏、导入素材 | `src/PetForm.cs` |
+| 菜单、声音、全屏、导入素材 | `src/PetForm.cs`、`src/ActionSound.cs` |
+| 窗口透明留白、坐标和裁切 | `src/Painter.cs`：`Padding`、`CanvasSize`；`src/PetForm.cs` |
 | 素材解码、缓存、包格式 | `src/Theme.cs` |
 | 多主题、动作清单、眼部与肚腹校准 | `src/ThemeManifest.cs`、`docs/主题与动作.md` |
 | 持续爬行、速度、碰边折返与暂停 | `src/CrawlMotion.cs`、`src/PetForm.cs` |

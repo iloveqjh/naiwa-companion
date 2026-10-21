@@ -9,6 +9,12 @@ namespace NaiwaCompanion
 {
     internal static class Painter
     {
+        // Reserve room for the widest squash, rebound stretch and drag rotation.
+        // This expands the transparent window without changing the pet's size.
+        internal static int Padding(Theme theme, int percent)
+        { return (int)Math.Ceiling(Math.Max(theme.Width, theme.Height) * percent / 100.0 * .16) + 3; }
+        internal static Size CanvasSize(Theme theme, int percent)
+        { int pad = Padding(theme, percent); return new Size(Math.Max(32, theme.Width * percent / 100) + pad * 2, Math.Max(32, theme.Height * percent / 100) + pad * 2); }
         internal static Bitmap Render(Theme theme, Animation state, int percent)
         {
             Bitmap scene;
@@ -74,10 +80,13 @@ namespace NaiwaCompanion
                 Bitmap next = Warp(scene, false, 0, 0, state.BellyAmount, theme.Belly); scene.Dispose(); scene = next;
             }
             int width = Math.Max(32, theme.Width * percent / 100), height = Math.Max(32, theme.Height * percent / 100);
-            Bitmap result = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+            int pad = Padding(theme, percent);
+            Size canvas = CanvasSize(theme, percent);
+            Bitmap result = new Bitmap(canvas.Width, canvas.Height, PixelFormat.Format32bppPArgb);
             using (Graphics g = Graphics.FromImage(result))
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TranslateTransform(pad, pad);
                 float cx = width * .5f, foot = height * (state.Dragging ? .56f : .956f);
                 if (state.Head.Active) foot = (theme.BodyBounds.Bottom - 1) * percent / 100f;
                 g.TranslateTransform(cx, foot); g.RotateTransform((float)state.Tilt);
@@ -93,10 +102,7 @@ namespace NaiwaCompanion
                 {
                     float sy = (float)Math.Max(.70, Math.Min(1.10, 1 - state.Head.Amount));
                     float sx = (float)(1 / Math.Sqrt(sy));
-                    Rectangle body = theme.BodyBounds;
-                    float radius = Math.Max(theme.Width * .5f - body.Left, body.Right - theme.Width * .5f);
-                    float fit = (theme.Width * .5f - 3) / Math.Max(1, radius);
-                    g.ScaleTransform(Math.Min(sx, Math.Max(1, fit)), sy);
+                    g.ScaleTransform(sx, sy);
                 }
                 g.TranslateTransform(-cx, -foot); g.DrawImage(scene, new Rectangle(0, 0, width, height));
             }

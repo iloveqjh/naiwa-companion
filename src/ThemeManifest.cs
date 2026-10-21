@@ -14,7 +14,7 @@ namespace NaiwaCompanion
     }
     public sealed class RecordedAction
     {
-        public string id, name, prefix, endPose;
+        public string id, name, prefix, endPose, audio;
         public int frames;
         public double fps;
     }
@@ -26,6 +26,7 @@ namespace NaiwaCompanion
         public EyeArea belly;
         public RecordedAction[] actions;
         public string locomotionAction;
+        public string headReactionAction;
         public double crawlSpeed = 48;
         public double colorGamma = 1, colorGreen = 1, colorBlue = 1;
         internal static ThemeManifest Load(ZipArchive archive)
@@ -43,6 +44,12 @@ namespace NaiwaCompanion
                 if (a == null || String.IsNullOrEmpty(a.id) || !System.Text.RegularExpressions.Regex.IsMatch(a.id, "^[a-z0-9-]{1,40}$") || !ids.Add(a.id) || String.IsNullOrWhiteSpace(a.name) || a.name.Length > 30 || a.prefix != "actions/" + a.id + "/" || a.frames < 1 || a.frames > 2000 || Double.IsNaN(a.fps) || Double.IsInfinity(a.fps) || a.fps < 1 || a.fps > 120 || (a.endPose != "idle" && a.endPose != "hold"))
                     throw new InvalidDataException("动作参数不正确。");
                 total += a.frames;
+                if (a.audio != null)
+                {
+                    ZipArchiveEntry sound = archive.GetEntry(a.audio);
+                    if (a.audio != "audio/" + a.id + ".wav" || sound == null || sound.Length < 44 || sound.Length > 20 * 1024 * 1024)
+                        throw new InvalidDataException("动作音频缺失、路径无效或过大。");
+                }
                 if (total > 5000) throw new InvalidDataException("主题总帧数过多。");
                 for (int i = 0; i < a.frames; i++)
                 {
@@ -58,6 +65,8 @@ namespace NaiwaCompanion
             if (result.belly != null) ValidateArea(result.belly, result.width, result.height);
             if (result.locomotionAction != null && (!ids.Contains(result.locomotionAction) || !FiniteRange(result.crawlSpeed, 8, 240)))
                 throw new InvalidDataException("爬行动作或速度无效。");
+            if (result.headReactionAction != null && !ids.Contains(result.headReactionAction))
+                throw new InvalidDataException("按头反应动作不存在。");
             if (!FiniteRange(result.colorGamma, .65, 1.4) || !FiniteRange(result.colorGreen, .8, 1.2) || !FiniteRange(result.colorBlue, .8, 1.2))
                 throw new InvalidDataException("主题颜色校准参数无效。");
             return result;

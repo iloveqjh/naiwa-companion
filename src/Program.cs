@@ -31,7 +31,7 @@ namespace NaiwaCompanion
                 {
                     IntPtr found = Desktop.FindWindow(null, Desktop.WindowName); Desktop.Box box; Desktop.GetWindowRect(found, out box);
                     int state = found == IntPtr.Zero ? 0 : Desktop.SendMessage(found, Desktop.StatusMessage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0) + "\nHeadHeld=" + ((state & 8) != 0) + "\nHeadActive=" + ((state & 16) != 0), Encoding.UTF8); return;
+                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0) + "\nHeadHeld=" + ((state & 8) != 0) + "\nHeadActive=" + ((state & 16) != 0) + "\nSoundEnabled=" + ((state & 32) != 0) + "\nReactionSoundReady=" + ((state & 64) != 0), Encoding.UTF8); return;
                 }
                 if (Array.IndexOf(args, "--quit") >= 0) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), 0x10, IntPtr.Zero, IntPtr.Zero); return; }
                 Preferences prefs = Preferences.Load(); string folder = Argument(args, "--assets");
