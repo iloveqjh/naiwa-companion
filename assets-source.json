@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "author": "yugh6",
+  "repository": "https://github.com/yugh6/Naiwa",
+  "revision": "553afb87508d3b05cda3af935616ed00e94dd3e4",
+  "files": [
+    {"name": "素材.nwp", "sha256": "A9C7795974D860DA0C82B45237456698640EE8D4252B5DB37503383D23FA46AE"},
+    {"name": "原版笑声.wav", "sha256": "E808F6F932ABFB81E7104EB1C586FE6C828BDA5DB4EF62E52E0638A64A01FDFA"}
+  ]
+}

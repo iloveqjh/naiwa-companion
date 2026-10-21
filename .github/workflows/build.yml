@@ -1,0 +1,27 @@
+name: Windows build and tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: pwsh
+        run: ./scripts/Build.ps1
+      - name: Offline self tests
+        shell: pwsh
+        run: |
+          $p = Start-Process ./dist/NaiwaCompanion.exe -ArgumentList '--self-test test-output' -Wait -PassThru
+          Get-Content ./test-output/results.txt
+          if ($p.ExitCode -ne 0) { throw 'Self tests failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NaiwaCompanion-Windows
+          path: |
+            dist/
+            test-output/results.txt

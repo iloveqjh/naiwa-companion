@@ -1,0 +1,12 @@
+dist/
+test-output/
+*.nwp
+*.wav
+*.mp4
+*.webp
+settings.json
+error.log
+*.tmp
+*.zip
+*.pdb
+.vs/
