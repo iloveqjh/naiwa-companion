@@ -13,6 +13,7 @@ namespace NaiwaCompanion
         public string Assets = "";
         public string ThemeFolder = "";
         public bool RepeatAction;
+        public bool CrawlEnabled = true;
         internal bool Ephemeral;
         internal static string DirectoryPath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaiwaCompanion"); } }
         internal static Preferences Load()

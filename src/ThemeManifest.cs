@@ -25,6 +25,9 @@ namespace NaiwaCompanion
         public EyeArea[] eyes;
         public EyeArea belly;
         public RecordedAction[] actions;
+        public string locomotionAction;
+        public double crawlSpeed = 48;
+        public double colorGamma = 1, colorGreen = 1, colorBlue = 1;
         internal static ThemeManifest Load(ZipArchive archive)
         {
             ZipArchiveEntry entry = archive.GetEntry("manifest.json");
@@ -53,8 +56,14 @@ namespace NaiwaCompanion
                 foreach (EyeArea eye in result.eyes) ValidateArea(eye, result.width, result.height);
             }
             if (result.belly != null) ValidateArea(result.belly, result.width, result.height);
+            if (result.locomotionAction != null && (!ids.Contains(result.locomotionAction) || !FiniteRange(result.crawlSpeed, 8, 240)))
+                throw new InvalidDataException("爬行动作或速度无效。");
+            if (!FiniteRange(result.colorGamma, .65, 1.4) || !FiniteRange(result.colorGreen, .8, 1.2) || !FiniteRange(result.colorBlue, .8, 1.2))
+                throw new InvalidDataException("主题颜色校准参数无效。");
             return result;
         }
+        private static bool FiniteRange(double value, double min, double max)
+        { return !Double.IsNaN(value) && !Double.IsInfinity(value) && value >= min && value <= max; }
         private static void ValidateArea(EyeArea a, int w, int h)
         {
             if (a == null || Single.IsNaN(a.x + a.y + a.width + a.height) || Single.IsInfinity(a.x + a.y + a.width + a.height) || a.x < 0 || a.y < 0 || a.width <= 1 || a.height <= 1 || a.x + a.width > w || a.y + a.height > h)

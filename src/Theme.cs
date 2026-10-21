@@ -18,6 +18,7 @@ namespace NaiwaCompanion
         internal ThemeManifest Manifest;
         internal RecordedAction SelectedAction;
         internal bool Recorded { get { return Manifest != null; } }
+        internal bool CanCrawl { get { return Recorded && Manifest.locomotionAction != null; } }
         internal string Name { get { return Recorded ? Manifest.name : Original ? "经典奶蛙" : "内置演示"; } }
         internal string ActionName { get { return Recorded ? SelectedAction.name : "捧腹大笑"; } }
         internal bool ReturnsToIdle { get { return Recorded && SelectedAction.endPose == "idle"; } }
@@ -92,6 +93,7 @@ namespace NaiwaCompanion
                 if (image.Width != Width || image.Height != Height) throw new InvalidDataException("动作图片尺寸不一致：" + name);
                 Bitmap result = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
                 using (Graphics g = Graphics.FromImage(result)) { g.CompositingMode = CompositingMode.SourceCopy; g.DrawImageUnscaled(image, 0, 0); }
+                if (Recorded) ApplyPalette(result, Manifest.colorGamma, Manifest.colorGreen, Manifest.colorBlue);
                 return result;
             }
         }
@@ -106,6 +108,32 @@ namespace NaiwaCompanion
         internal Bitmap Idle { get { return idle; } }
         internal Bitmap Laugh(int frame) { return Cached((Recorded ? SelectedAction.prefix : "laugh/") + Math.Max(0, Math.Min(Frames - 1, frame)).ToString("0000") + ".png"); }
         internal Bitmap Blink(int frame) { return Recorded ? idle : Cached("blink/0/" + Math.Max(0, Math.Min(BlinkFrames - 1, frame)).ToString("00") + ".png"); }
+        internal Bitmap Crawl(double time)
+        {
+            foreach (RecordedAction action in Manifest.actions) if (action.id == Manifest.locomotionAction)
+                return Cached(action.prefix + ((int)(time * action.fps) % action.frames).ToString("0000") + ".png");
+            return idle;
+        }
+        internal static void ApplyPalette(Bitmap image, double gamma, double green, double blue)
+        {
+            if (gamma == 1 && green == 1 && blue == 1) return;
+            byte[] pixels = Painter.ReadPixels(image);
+            double[] light = new double[256];
+            for (int n = 0; n < light.Length; n++) light[n] = Math.Pow(n / 255.0, gamma);
+            for (int p = 0; p < pixels.Length; p += 4)
+            {
+                int alpha = pixels[p + 3]; if (alpha == 0) continue;
+                for (int c = 0; c < 3; c++)
+                {
+                    int straight = Math.Max(0, Math.Min(255, (int)Math.Round(pixels[p + c] * 255.0 / alpha)));
+                    double gain = c == 0 ? blue : c == 1 ? green : 1;
+                    pixels[p + c] = (byte)Math.Round(Math.Min(1, light[straight] * gain) * alpha);
+                }
+            }
+            BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try { System.Runtime.InteropServices.Marshal.Copy(pixels, 0, data.Scan0, pixels.Length); }
+            finally { image.UnlockBits(data); }
+        }
         internal void SelectAction(string id)
         {
             if (!Recorded) return;

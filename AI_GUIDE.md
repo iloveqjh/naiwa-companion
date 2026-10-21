@@ -31,6 +31,8 @@
 | 菜单、声音、全屏、导入素材 | `src/PetForm.cs` |
 | 素材解码、缓存、包格式 | `src/Theme.cs` |
 | 多主题、动作清单、眼部与肚腹校准 | `src/ThemeManifest.cs`、`docs/主题与动作.md` |
+| 持续爬行、速度、碰边折返与暂停 | `src/CrawlMotion.cs`、`src/PetForm.cs` |
+| 主题亮度和颜色校准 | `src/Theme.cs`：`ApplyPalette`；主题包内 `colorGamma`、`colorGreen`、`colorBlue` |
 | 默认设置与保存 | `src/Preferences.cs` |
 | 入口和命令行参数 | `src/Program.cs` |
 | 素材下载、固定哈希和准备窗口 | `src/AssetDownloader.cs` |

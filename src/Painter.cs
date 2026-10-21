@@ -28,6 +28,7 @@ namespace NaiwaCompanion
                     scene.Dispose(); scene = lying;
                 }
             }
+            else if (state.Crawling && theme.CanCrawl && !state.Laughing && !state.Dragging && state.StandAt < 0) scene = (Bitmap)theme.Crawl(state.CrawlTime).Clone();
             else if (state.Resting) scene = (Bitmap)theme.Laugh(theme.Frames - 1).Clone();
             else if (state.StandAt >= 0)
             {
@@ -55,7 +56,8 @@ namespace NaiwaCompanion
             }
             else scene = Warp(theme.Idle, true, state.GazeX, state.GazeY, 0);
 
-            if (state.PokeAt >= 0)
+            if (theme.CanCrawl && state.FacingLeft) scene.RotateFlip(RotateFlipType.RotateNoneFlipX);
+            if (state.PokeAt >= 0 && !state.Crawling)
             {
                 Bitmap next = Warp(scene, false, 0, 0, state.BellyAmount, theme.Belly); scene.Dispose(); scene = next;
             }

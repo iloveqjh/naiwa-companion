@@ -11,6 +11,7 @@ namespace NaiwaCompanion
     {
         internal const string WindowName = "NaiwaCompanion.Main.1";
         internal const int WakeMessage = 0x8007;
+        internal const int StatusMessage = 0x8008;
         [StructLayout(LayoutKind.Sequential)] internal struct XY { internal int X, Y; internal XY(int x, int y) { X = x; Y = y; } }
         [StructLayout(LayoutKind.Sequential)] internal struct WH { internal int W, H; internal WH(int w, int h) { W = w; H = h; } }
         [StructLayout(LayoutKind.Sequential)] internal struct Box { internal int L, T, R, B; }
@@ -18,6 +19,7 @@ namespace NaiwaCompanion
         [DllImport("user32.dll")] internal static extern bool SetProcessDPIAware();
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr FindWindow(string cls, string title);
         [DllImport("user32.dll")] internal static extern bool PostMessage(IntPtr window, int message, IntPtr w, IntPtr l);
+        [DllImport("user32.dll")] internal static extern IntPtr SendMessage(IntPtr window, int message, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr window, out Box rect);
         [DllImport("user32.dll")] internal static extern int GetWindowLong(IntPtr window, int index);

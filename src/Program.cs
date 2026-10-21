@@ -30,7 +30,8 @@ namespace NaiwaCompanion
                 if (output != null)
                 {
                     IntPtr found = Desktop.FindWindow(null, Desktop.WindowName); Desktop.Box box; Desktop.GetWindowRect(found, out box);
-                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B, Encoding.UTF8); return;
+                    int state = found == IntPtr.Zero ? 0 : Desktop.SendMessage(found, Desktop.StatusMessage, IntPtr.Zero, IntPtr.Zero).ToInt32();
+                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0), Encoding.UTF8); return;
                 }
                 if (Array.IndexOf(args, "--quit") >= 0) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), 0x10, IntPtr.Zero, IntPtr.Zero); return; }
                 Preferences prefs = Preferences.Load(); string folder = Argument(args, "--assets");

@@ -26,6 +26,7 @@ namespace NaiwaCompanion
         private double repeatAt = -1;
         private bool hidden, fullscreenCandidate, menuOpen, ready;
         private string lastFrame = "";
+        internal readonly CrawlMotion Crawl = new CrawlMotion();
         internal bool HiddenByFullscreen { get { return hidden; } }
 
         internal PetForm(Theme loaded, Preferences settings)
@@ -37,19 +38,14 @@ namespace NaiwaCompanion
             ClientSize = new Size(theme.Width * prefs.Size / 100, theme.Height * prefs.Size / 100);
             if (prefs.X == int.MinValue || prefs.Y == int.MinValue) Home(); else Location = Clamp(new Point(prefs.X, prefs.Y), Size);
             Cursor = Cursors.Hand;
+            Crawl.Reset(Location);
             menu.Font = new Font("Microsoft YaHei UI", 10);
-            using (Bitmap iconImage = Theme.DrawDemo(0, 0, 0, false))
-            using (Bitmap small = new Bitmap(iconImage, 32, 32))
-            {
-                IntPtr native = small.GetHicon();
-                try { using (Icon temp = Icon.FromHandle(native)) petIcon = (Icon)temp.Clone(); }
-                finally { Desktop.DestroyIcon(native); }
-            }
+            RefreshIcon();
             Icon = petIcon; LoadAudio(); BuildMenu();
             tray.Icon = petIcon; tray.Text = "奶蛙陪伴 · 双击笑 / 拖动 / 右键设置"; tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { Home(); if (!hidden) { Show(); Render(true); } Save(); };
             timer.Interval = 16; timer.Tick += delegate { Tick(); };
-            Shown += delegate { ready = true; tray.Visible = !prefs.Ephemeral; Render(true); timer.Start(); if (theme.Recorded && prefs.RepeatAction) repeatAt = Now + .6; };
+            Shown += delegate { ready = true; tray.Visible = !prefs.Ephemeral; Render(true); timer.Start(); if (theme.Recorded && prefs.RepeatAction && !theme.CanCrawl) repeatAt = Now + .6; };
             menu.Opening += delegate { menuOpen = true; BuildMenu(); };
             menu.Closed += delegate { menuOpen = false; };
         }
@@ -61,6 +57,7 @@ namespace NaiwaCompanion
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == Desktop.WakeMessage) { Home(); if (!hidden) { Show(); Render(true); } Save(); return; }
+            if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0)); return; }
             if (m.Msg == 0x21) { m.Result = (IntPtr)3; return; }
             if (m.Msg == 0x84 && ready && !pointer.Held)
             {
@@ -68,7 +65,7 @@ namespace NaiwaCompanion
                 m.Result = (IntPtr)(Hit(p) ? 1 : -1); return;
             }
             base.WndProc(ref m);
-            if (m.Msg == 0x7E && ready) { Location = Clamp(Location, Size); Render(true); Save(); }
+            if (m.Msg == 0x7E && ready) { Location = Clamp(Location, Size); Crawl.Reset(Location); Render(true); Save(); }
         }
         internal bool Hit(Point p)
         { return alphaPixels != null && p.X >= 0 && p.Y >= 0 && p.X < Width && p.Y < Height && alphaPixels[(p.Y * Width + p.X) * 4 + 3] > 28; }
@@ -87,26 +84,38 @@ namespace NaiwaCompanion
             if (hidden) return;
             Point p = PointToClient(Cursor.Position);
             bool hovered = Hit(p) || menuOpen || pointer.Held;
-            PointF target = NaiwaCompanion.Animation.GazeTarget(p, ClientSize, hovered, prefs.FollowPointer, theme.GazeOrigin(prefs.Size));
+            PointF? gazeOrigin = theme.GazeOrigin(prefs.Size);
+            if (theme.CanCrawl && Animation.FacingLeft && gazeOrigin.HasValue) gazeOrigin = new PointF(Width - gazeOrigin.Value.X, gazeOrigin.Value.Y);
+            PointF target = NaiwaCompanion.Animation.GazeTarget(p, ClientSize, hovered, prefs.FollowPointer, gazeOrigin);
+            if (theme.CanCrawl && Animation.FacingLeft) target.X = -target.X;
             bool wasLaughing = Animation.Laughing;
             Animation.Advance(now, target, theme.Duration, theme.BlinkFrames / theme.BlinkFps, !theme.Recorded);
             if (wasLaughing && !Animation.Laughing)
             {
                 if (audio != null) audio.Stop();
                 if (theme.ReturnsToIdle) Animation.Stand(now);
-                if (prefs.RepeatAction) repeatAt = now + .85;
+                if (prefs.RepeatAction && !theme.CanCrawl) repeatAt = now + .85;
+            }
+            Animation.Crawling = theme.CanCrawl && prefs.CrawlEnabled;
+            if (theme.CanCrawl)
+            {
+                bool paused = !Animation.Crawling || Animation.Laughing || Animation.StandAt >= 0 || Animation.Dragging || pointer.Held || menuOpen || prefs.Ephemeral;
+                Point next = Crawl.Advance(now, Screen.FromRectangle(Bounds).WorkingArea, Size, theme.Manifest.crawlSpeed * prefs.Size / 100.0, paused);
+                if (!paused) Location = next;
+                Animation.CrawlTime = Crawl.Time; Animation.FacingLeft = Crawl.Direction < 0;
             }
             if (repeatAt >= 0 && now >= repeatAt && !pointer.Held && !menuOpen) { repeatAt = -1; Laugh(); }
             Render(false);
             // When the gaze settles, reduce idle wakeups. Playback still uses its own clock.
             bool changingEyes = Math.Abs(Animation.GazeX - target.X) + Math.Abs(Animation.GazeY - target.Y) > .01;
-            timer.Interval = Animation.Active || changingEyes ? 16 : 80;
+            timer.Interval = Animation.Active || Animation.Crawling || changingEyes ? 16 : 80;
         }
         internal void SetHidden(bool value)
         {
             if (hidden == value) return;
             hidden = value; bool resting = Animation.Resting;
             repeatAt = -1;
+            Animation.Crawling = false; Crawl.Reset(Location);
             Animation.Stop(Now); Animation.Resting = resting;
             if (audio != null) audio.Stop(); pointer.Cancel(); Capture = false;
             if (value) { Hide(); timer.Interval = 150; }
@@ -116,6 +125,7 @@ namespace NaiwaCompanion
         {
             if (!IsHandleCreated || hidden || IsDisposed) return;
             string key = prefs.Size + "/" + theme.ActionName + "/" + (Animation.Resting ? "rest" : Animation.Laughing ? "laugh" + (int)(Animation.LaughTime * theme.Fps) : Animation.Blinking ? "blink" + (int)((Animation.Time - Animation.BlinkAt) * theme.BlinkFps) : "eye" + Math.Round(Animation.GazeX * 30) + "," + Math.Round(Animation.GazeY * 30));
+            if (theme.CanCrawl) key += "/crawl/" + Animation.Crawling + "/" + Animation.FacingLeft + "/" + (int)(Animation.CrawlTime * 30) + "/" + Left + "/" + Top;
             if (Animation.PokeAt >= 0 || Animation.DropAt >= 0 || Animation.StandAt >= 0 || Animation.Dragging || Math.Abs(Animation.Tilt) > .01) key += "/" + (int)(Now * 60);
             if (!force && key == lastFrame) return;
             using (Bitmap image = Painter.Render(theme, Animation, prefs.Size))
@@ -131,6 +141,8 @@ namespace NaiwaCompanion
         }
         internal bool Laugh()
         {
+            if (theme.CanCrawl && theme.SelectedAction.id == theme.Manifest.locomotionAction)
+            { if (hidden) return false; prefs.CrawlEnabled = true; Animation.Stop(Now); Animation.Crawling = true; Save(); Render(true); return true; }
             if (hidden || !Animation.StartLaugh(Now)) return false;
             repeatAt = -1;
             if (prefs.Sound && audio != null) audio.Play(); Render(true); return true;
@@ -138,12 +150,14 @@ namespace NaiwaCompanion
         private void StopLaugh() { repeatAt = -1; Animation.Stop(Now); if (audio != null) audio.Stop(); Render(true); }
         internal void PlayAction(string id)
         { StopLaugh(); theme.SelectAction(id); Laugh(); }
+        private void ToggleCrawl()
+        { prefs.CrawlEnabled = !prefs.CrawlEnabled; StopLaugh(); Animation.Crawling = prefs.CrawlEnabled; Crawl.Reset(Location); Save(); }
         private ToolStripMenuItem Item(string label, EventHandler action, bool selected)
         { ToolStripMenuItem result = new ToolStripMenuItem(label, null, action); result.Checked = selected; menu.Items.Add(result); return result; }
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.1 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.2 · " + theme.Name, null, false).Enabled = false;
             BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
             Item(theme.ActionName + "（双击）", delegate { Laugh(); }, false);
@@ -157,8 +171,9 @@ namespace NaiwaCompanion
                     item.Checked = id == theme.SelectedAction.id; actions.DropDownItems.Add(item);
                 }
             }
-            Item("循环当前动作", delegate { prefs.RepeatAction = !prefs.RepeatAction; if (!prefs.RepeatAction) repeatAt = -1; Save(); }, prefs.RepeatAction);
-            Item(theme.Recorded ? "停止动作 / 恢复待机" : "停止大笑 / 站起来", delegate { if (Animation.Resting) Animation.Stand(Now); else StopLaugh(); Render(true); }, false);
+            if (theme.CanCrawl) Item(prefs.CrawlEnabled ? "暂停爬行（单击）" : "开始爬行（单击）", delegate { ToggleCrawl(); }, prefs.CrawlEnabled);
+            else Item("循环当前动作", delegate { prefs.RepeatAction = !prefs.RepeatAction; if (!prefs.RepeatAction) repeatAt = -1; else if (!Animation.Laughing) repeatAt = Now + .2; Save(); }, prefs.RepeatAction);
+            Item(theme.Recorded ? "停止动作 / 恢复待机" : "停止大笑 / 站起来", delegate { if (theme.CanCrawl) { prefs.CrawlEnabled = false; Animation.Crawling = false; Save(); } if (Animation.Resting) Animation.Stand(Now); else StopLaugh(); Render(true); }, false);
             Item("身外跟随，身上回正", delegate { prefs.FollowPointer = !prefs.FollowPointer; Save(); }, prefs.FollowPointer);
             ToolStripMenuItem sound = Item("原版笑声", delegate { prefs.Sound = !prefs.Sound; if (!prefs.Sound && audio != null) audio.Stop(); Save(); }, prefs.Sound); sound.Enabled = audio != null;
             menu.Items.Add(new ToolStripSeparator());
@@ -222,7 +237,8 @@ namespace NaiwaCompanion
                     if (!replacement.Original) { replacement.Dispose(); throw new InvalidDataException("这个文件夹中没有素材.nwp 或 theme.nct。"); }
                     StopLaugh(); Theme previous = theme; theme = replacement; previous.Dispose();
                     if (theme.Recorded) prefs.ThemeFolder = folder; else { prefs.Assets = folder; prefs.ThemeFolder = ""; }
-                    LoadAudio(); SetSize(prefs.Size); if (theme.Recorded && prefs.RepeatAction) repeatAt = Now + .6; Save();
+                    Animation.Crawling = false; Animation.FacingLeft = false; RefreshIcon();
+                    LoadAudio(); SetSize(prefs.Size); if (theme.Recorded && prefs.RepeatAction && !theme.CanCrawl) repeatAt = Now + .6; Save();
             }
             catch (Exception e) { MessageBox.Show("素材导入失败：" + e.Message, "奶蛙陪伴"); }
         }
@@ -235,7 +251,7 @@ namespace NaiwaCompanion
         {
             int bottom = Bottom, center = Left + Width / 2; prefs.Size = Math.Max(50, Math.Min(150, percent));
             ClientSize = new Size(theme.Width * prefs.Size / 100, theme.Height * prefs.Size / 100);
-            Location = prefs.Ephemeral ? new Point(-20000, -20000) : Clamp(new Point(center - Width / 2, bottom - Height), Size); Render(true); Save();
+            Location = prefs.Ephemeral ? new Point(-20000, -20000) : Clamp(new Point(center - Width / 2, bottom - Height), Size); Crawl.Reset(Location); Render(true); Save();
         }
         internal static Point Clamp(Point desired, Size size)
         {
@@ -246,6 +262,7 @@ namespace NaiwaCompanion
         {
             Rectangle screen = Screen.FromPoint(Cursor.Position).WorkingArea;
             Location = Clamp(new Point(screen.Right - Width - 24, screen.Bottom - Height + 8), Size);
+            Crawl.Reset(Location);
         }
         private void Save() { prefs.X = Left; prefs.Y = Top; prefs.Save(); }
         protected override void OnMouseDown(MouseEventArgs e)
@@ -269,14 +286,26 @@ namespace NaiwaCompanion
             base.OnMouseUp(e); if (e.Button != MouseButtons.Left || !pointer.Held) return;
             bool moved = pointer.Moved;
             bool twice = pointer.Up(PointToScreen(e.Location), Now, SystemInformation.DoubleClickTime, SystemInformation.DoubleClickSize); Capture = false;
-            if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Save(); }
+            if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); Save(); }
+            else if (theme.CanCrawl && !twice) ToggleCrawl();
             else if (twice) Laugh();
             else if (Animation.Resting) Animation.Stand(Now);
             else Animation.Poke(Now, new PointF(e.X * 100f / prefs.Size, e.Y * 100f / prefs.Size), new Size(theme.Width, theme.Height), theme.Belly);
             Render(true);
         }
         protected override void OnMouseCaptureChanged(EventArgs e)
-        { base.OnMouseCaptureChanged(e); if (!Capture && pointer.Held) { pointer.Cancel(); Animation.Release(Now); Location = Clamp(Location, Size); Render(true); Save(); } }
+        { base.OnMouseCaptureChanged(e); if (!Capture && pointer.Held) { pointer.Cancel(); Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); Render(true); Save(); } }
+        private void RefreshIcon()
+        {
+            Icon previous = petIcon;
+            using (Bitmap small = new Bitmap(theme.Idle, 32, 32))
+            {
+                IntPtr native = small.GetHicon();
+                try { using (Icon temp = Icon.FromHandle(native)) petIcon = (Icon)temp.Clone(); }
+                finally { Desktop.DestroyIcon(native); }
+            }
+            Icon = petIcon; tray.Icon = petIcon; if (previous != null) previous.Dispose();
+        }
         protected override void OnFormClosing(FormClosingEventArgs e)
         { timer.Stop(); Save(); if (audio != null) audio.Stop(); base.OnFormClosing(e); }
         protected override void Dispose(bool disposing)

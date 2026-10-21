@@ -22,6 +22,8 @@ namespace NaiwaCompanion
             Directory.CreateDirectory(output); log.Clear();
             try
             {
+                TestCrawlMotion();
+                TestPalette();
                 using (Theme theme = new Theme(assets))
                 {
                     if (theme.Recorded)
@@ -109,6 +111,46 @@ namespace NaiwaCompanion
             catch (Exception e) { log.Add(e.ToString()); log.Add("RESULT FAIL"); File.WriteAllLines(Path.Combine(output, "results.txt"), log, new UTF8Encoding(false)); return 1; }
         }
         private static void CheckRegion(bool ok) { if (!ok) throw new Exception("belly warp changed protected face or feet"); }
+        private static void TestCrawlMotion()
+        {
+            CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(-1600, -200, 1600, 1000); Size size = new Size(300, 380);
+            crawl.Reset(new Point(-900, 200)); crawl.Advance(0, area, size, 54, false);
+            for (int n = 1; n <= 60; n++) crawl.Advance(n / 60.0, area, size, 54, false);
+            Check(Math.Abs(crawl.X + 846) < .001, "crawl preserves fractional movement across 60 Hz ticks");
+            double x = crawl.X, phase = crawl.Time;
+            crawl.Advance(1.06, area, size, 54, true);
+            Check(crawl.X == x && crawl.Time == phase, "paused crawl freezes position and gait together");
+            crawl.Reset(new Point(-301, 200)); crawl.Direction = 1; crawl.Advance(2, area, size, 54, false);
+            crawl.Advance(2.08, area, size, 54, false);
+            Check(crawl.Direction == -1 && crawl.X < -300, "right boundary turns around and preserves overshoot");
+            crawl.Reset(new Point(-1599, 200)); crawl.Direction = -1; crawl.Advance(3, area, size, 54, false);
+            crawl.Advance(3.08, area, size, 54, false);
+            Check(crawl.Direction == 1 && crawl.X > -1600, "left boundary turns around on a negative-coordinate monitor");
+            for (int n = 1; n <= 30000; n++)
+            {
+                Point p = crawl.Advance(3.08 + n / 60.0, area, size, 54, false);
+                if (p.X < area.Left || p.X + size.Width > area.Right || p.Y < area.Top || p.Y + size.Height > area.Bottom) throw new Exception("crawl escaped work area");
+            }
+            Check(true, "continuous crawl stays inside monitor work area through repeated turns");
+            crawl.Reset(new Point(-20000, -20000)); crawl.Advance(0, new Rectangle(0, 0, 200, 200), size, 54, false);
+            Check(crawl.X == 0 && crawl.Y == 0, "oversized pet on a small work area does not loop or escape");
+            crawl.Reset(new Point(-1200, 400)); crawl.Advance(0, area, size, 54, false);
+            Check(crawl.X == -1200 && crawl.Y == 400, "drag release and resize reset movement to current position");
+        }
+        private static void TestPalette()
+        {
+            using (Bitmap image = new Bitmap(3, 1, PixelFormat.Format32bppPArgb))
+            {
+                image.SetPixel(0, 0, Color.FromArgb(255, 230, 155, 45));
+                image.SetPixel(1, 0, Color.FromArgb(80, 100, 70, 30));
+                image.SetPixel(2, 0, Color.Transparent);
+                byte[] before = Painter.ReadPixels(image); Theme.ApplyPalette(image, .86, 1.035, 1.06); byte[] after = Painter.ReadPixels(image);
+                Check(after[1] > before[1] && after[5] > before[5], "theme palette lifts midtone yellow and translucent edges");
+                for (int n = 0; n < after.Length; n += 4)
+                    if (after[n + 3] != before[n + 3] || after[n] > after[n + 3] || after[n + 1] > after[n + 3] || after[n + 2] > after[n + 3]) throw new Exception("palette damaged premultiplied alpha");
+                Check(true, "palette keeps original alpha and valid premultiplied edges");
+            }
+        }
         private static void TestRecorded(Theme theme, string output)
         {
             Check(theme.Recorded && theme.Manifest.actions.Length > 0, "recorded theme manifest and action list load");
@@ -137,6 +179,22 @@ namespace NaiwaCompanion
                 if (theme.ReturnsToIdle) { state.Stand(theme.Duration + .01); Check(!state.Resting && state.StandAt >= 0, action.name + ": returns through transition to idle"); }
             }
             theme.SelectAction(first);
+            if (theme.CanCrawl)
+            {
+                using (Bitmap right = Painter.Render(theme, new Animation { Crawling = true, CrawlTime = .3 }, 100))
+                using (Bitmap left = Painter.Render(theme, new Animation { Crawling = true, FacingLeft = true, CrawlTime = .3 }, 100))
+                {
+                    byte[] pixels = Painter.ReadPixels(right), mirrored = Painter.ReadPixels(left);
+                    int differences = 0;
+                    for (int y = 0; y < theme.Height; y++) for (int x = 0; x < theme.Width; x++)
+                    {
+                        int a = (y * theme.Width + x) * 4, b = (y * theme.Width + theme.Width - 1 - x) * 4;
+                        for (int c = 0; c < 4; c++) if (Math.Abs(pixels[a + c] - mirrored[b + c]) > 2) differences++;
+                    }
+                    Check(differences < theme.Width * theme.Height / 100, "crawl turn mirrors body and gait consistently");
+                    right.Save(Path.Combine(output, "crawl-right.png")); left.Save(Path.Combine(output, "crawl-left.png"));
+                }
+            }
             bool rejected = false; try { theme.SelectAction("does-not-exist"); } catch (InvalidDataException) { rejected = true; }
             Check(rejected, "unknown recorded action rejected without replacing active action");
             using (Bitmap moved = Painter.Render(theme, new Animation { GazeX = 1, GazeY = -.7 }, 100))
@@ -161,8 +219,8 @@ namespace NaiwaCompanion
             using (Theme another = new Theme(theme.Folder)) using (PetForm form = new PetForm(another, prefs))
             {
                 form.Location = new Point(-20000, -20000); form.Show(); Application.DoEvents();
-                form.PlayAction(first); Check(form.Animation.Laughing, "recorded menu action starts native playback");
-                form.SetHidden(true); Check(!form.Animation.Laughing, "recorded playback stops when hidden");
+                form.PlayAction(first); Check(form.Animation.Laughing || (theme.CanCrawl && form.Animation.Crawling), "recorded menu action starts native playback");
+                form.SetHidden(true); Check(!form.Animation.Laughing && !form.Animation.Crawling, "recorded playback stops when hidden");
                 form.SetHidden(false); form.Close();
             }
         }
@@ -221,6 +279,27 @@ namespace NaiwaCompanion
         }
         private static void RenderRecorded(Theme theme, string output)
         {
+            if (theme.CanCrawl)
+            {
+                string motion = Path.Combine(output, "motion"); Directory.CreateDirectory(motion);
+                CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(0, 0, 960, 448); Size size = new Size(307, 358);
+                crawl.Reset(new Point(530, 64));
+                for (int frame = 0; frame < 300; frame++)
+                {
+                    Point position = crawl.Advance(frame / 30.0, area, size, theme.Manifest.crawlSpeed * .8, false);
+                    Animation state = new Animation { Crawling = true, CrawlTime = crawl.Time, FacingLeft = crawl.Direction < 0 };
+                    using (Bitmap image = new Bitmap(area.Width, area.Height))
+                    using (Graphics page = Graphics.FromImage(image))
+                    using (Bitmap pet = Painter.Render(theme, state, 80))
+                    using (Font caption = new Font("Microsoft YaHei UI", 15))
+                    {
+                        page.Clear(Color.FromArgb(239, 244, 247));
+                        page.DrawString("爬爬奶蛙 · 连续爬行 / 碰边折返", caption, Brushes.DarkSlateGray, 24, 18);
+                        page.DrawImageUnscaled(pet, position);
+                        image.Save(Path.Combine(motion, frame.ToString("0000") + ".png"), ImageFormat.Png);
+                    }
+                }
+            }
             int count = theme.Manifest.actions.Length + 1;
             using (Bitmap sheet = new Bitmap(260 * count, 390))
             using (Graphics g = Graphics.FromImage(sheet))

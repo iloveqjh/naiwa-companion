@@ -10,6 +10,8 @@ namespace NaiwaCompanion
         internal double Time, GazeX, GazeY, Tilt;
         internal double LaughAt = -1, BlinkAt = -1, PokeAt = -1, DropAt = -1, StandAt = -1;
         internal bool Resting, Dragging;
+        internal bool Crawling, FacingLeft;
+        internal double CrawlTime;
         private double lastTime = -1, nextBlink = 4.5, tiltSpeed, desiredTilt, lastDrag;
         private readonly Random random = new Random(3721);
         internal bool Laughing { get { return LaughAt >= 0; } }
