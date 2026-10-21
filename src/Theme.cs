@@ -21,7 +21,7 @@ namespace NaiwaCompanion
         internal bool CanCrawl { get { return Recorded && Manifest.locomotionAction != null; } }
         internal RecordedAction ReactionAction { get { return Recorded ? FindAction(Manifest.headReactionAction) : null; } }
         internal double ReactionDuration { get { RecordedAction clip = ReactionAction; return clip != null ? clip.frames / clip.fps : Recorded ? Manifest.id == "angel" ? 1.8 : Manifest.id == "kungfu" || Manifest.id == "taichi" ? 1.25 : CanCrawl ? 3.3 : .75 : .85; } }
-        internal string ReactionName { get { return Recorded ? Manifest.id == "angel" ? "合掌祈祷，再恢复待机" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "推掌侧目，收势回望" : CanCrawl ? "回头看看，再趴着偷笑" : "安静回望" : "盯一眼，再自然眨眼"; } }
+        internal string ReactionName { get { return ReactionAction != null ? ReactionAction.name : Recorded ? Manifest.id == "angel" ? "合掌祈祷，再恢复待机" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "推掌侧目，收势回望" : CanCrawl ? "回头看看，再趴着偷笑" : "安静回望" : "盯一眼，再自然眨眼"; } }
         internal bool AlignReaction { get { return CanCrawl && !HasPeek; } }
         private bool HasPeek { get { if (!Recorded) return false; foreach (RecordedAction a in Manifest.actions) if (a.id == "peek") return true; return false; } }
         internal string Name { get { return Recorded ? Manifest.name : Original ? "经典奶蛙" : "内置演示"; } }
@@ -205,8 +205,13 @@ namespace NaiwaCompanion
         internal Bitmap Crawl(double time)
         {
             foreach (RecordedAction action in Manifest.actions) if (action.id == Manifest.locomotionAction)
-                return Cached(action.prefix + ((int)(time * action.fps) % action.frames).ToString("0000") + ".png");
+                return Cached(action.prefix + CrawlFrameIndex(time).ToString("0000") + ".png");
             return idle;
+        }
+        internal int CrawlFrameIndex(double time)
+        {
+            RecordedAction action = CanCrawl ? FindAction(Manifest.locomotionAction) : null;
+            return action == null ? 0 : (int)(Math.Max(0, time) * action.fps) % action.frames;
         }
         internal static void ApplyPalette(Bitmap image, double gamma, double green, double blue)
         {

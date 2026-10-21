@@ -369,6 +369,10 @@ namespace NaiwaCompanion
             theme.SelectAction(first);
             if (theme.CanCrawl)
             {
+                RecordedAction locomotion = null;
+                foreach (RecordedAction action in theme.Manifest.actions) if (action.id == theme.Manifest.locomotionAction) locomotion = action;
+                Check(theme.CrawlFrameIndex(.5 / locomotion.fps) == 0 && theme.CrawlFrameIndex(1.5 / locomotion.fps) == 1, "crawl render key advances at the locomotion clip frame rate");
+                Check(theme.CrawlFrameIndex((locomotion.frames + .5) / locomotion.fps) == 0, "crawl frame clock wraps without a duplicate endpoint hold");
                 using (Bitmap right = Painter.Render(theme, new Animation { Crawling = true, CrawlTime = .3 }, 100))
                 using (Bitmap left = Painter.Render(theme, new Animation { Crawling = true, FacingLeft = true, CrawlTime = .3 }, 100))
                 {
@@ -475,9 +479,9 @@ namespace NaiwaCompanion
                 string motion = Path.Combine(output, "motion"); Directory.CreateDirectory(motion);
                 CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(0, 0, 1100, 640); Size size = Painter.CanvasSize(theme, 80);
                 crawl.Reset(new Point(530, 64));
-                for (int frame = 0; frame < 300; frame++)
+                for (int frame = 0; frame < 600; frame++)
                 {
-                    Point position = crawl.Advance(frame / 30.0, area, size, theme.Manifest.crawlSpeed * .8, false);
+                    Point position = crawl.Advance(frame / 60.0, area, size, theme.Manifest.crawlSpeed * .8, false);
                     Animation state = new Animation { Crawling = true, CrawlTime = crawl.Time, FacingLeft = crawl.Direction < 0 };
                     using (Bitmap image = new Bitmap(area.Width, area.Height))
                     using (Graphics page = Graphics.FromImage(image))
