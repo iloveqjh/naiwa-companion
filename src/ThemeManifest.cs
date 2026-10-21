@@ -27,6 +27,7 @@ namespace NaiwaCompanion
         public RecordedAction[] actions;
         public string locomotionAction;
         public string headReactionAction;
+        public bool headReactionSeamless;
         public double crawlSpeed = 48;
         public double colorGamma = 1, colorGreen = 1, colorBlue = 1;
         internal static ThemeManifest Load(ZipArchive archive)

@@ -41,7 +41,7 @@ namespace NaiwaCompanion
                 {
                     Bitmap aligned = AlignReaction(scene, theme.BodyBounds); scene.Dispose(); scene = aligned;
                 }
-                if (state.Head.ReactionWeight < .999)
+                if ((!theme.Recorded || !theme.Manifest.headReactionSeamless) && state.Head.ReactionWeight < .999)
                 {
                     Bitmap mixed = Mix(scene, theme.Idle, 1 - state.Head.ReactionWeight); scene.Dispose(); scene = mixed;
                 }

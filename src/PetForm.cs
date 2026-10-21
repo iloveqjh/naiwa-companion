@@ -155,6 +155,7 @@ namespace NaiwaCompanion
             if (!IsHandleCreated || hidden || IsDisposed) return;
             string key = prefs.Size + "/" + theme.ActionName + "/" + (Animation.Resting ? "rest" : Animation.Laughing ? "laugh" + (int)(Animation.LaughTime * theme.Fps) : Animation.Blinking ? "blink" + (int)((Animation.Time - Animation.BlinkAt) * theme.BlinkFps) : "eye" + Math.Round(Animation.GazeX * 30) + "," + Math.Round(Animation.GazeY * 30));
             if (theme.CanCrawl) key += "/crawl/" + Animation.Crawling + "/" + Animation.FacingLeft + "/" + (int)(Animation.CrawlTime * 30) + "/" + Left + "/" + Top;
+            if (Animation.Head.Reacting) key += "/reaction/" + (int)(Animation.Head.ReactionTime * (theme.ReactionAction != null ? theme.ReactionAction.fps : 60));
             if (Animation.Head.Active || Animation.PokeAt >= 0 || Animation.DropAt >= 0 || Animation.StandAt >= 0 || Animation.Dragging || Math.Abs(Animation.Tilt) > .01) key += "/" + (int)(Now * 60);
             if (!force && key == lastFrame) return;
             using (Bitmap image = Painter.Render(theme, Animation, prefs.Size))

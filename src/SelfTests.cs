@@ -189,6 +189,13 @@ namespace NaiwaCompanion
                 Check(Math.Abs(theme.ReactionDuration - theme.ReactionAction.frames / theme.ReactionAction.fps) < .0001, "head reaction preserves complete recorded sequence duration");
                 theme.Reaction(theme.ReactionDuration * .75);
                 Check(theme.SelectedAction.id == selected, "head reaction leaves chosen menu action unchanged");
+                if (theme.Manifest.headReactionSeamless)
+                {
+                    byte[] idle = Painter.ReadPixels(theme.Idle), first = Painter.ReadPixels(theme.Reaction(0));
+                    byte[] last = Painter.ReadPixels(theme.Reaction(theme.ReactionDuration - .5 / theme.ReactionAction.fps));
+                    for (int n = 0; n < idle.Length; n++) if (idle[n] != first[n] || idle[n] != last[n]) throw new Exception("seamless reaction does not join its original rest pose");
+                    Check(true, "seamless head reaction starts and ends at the exact original idle pixels");
+                }
             }
         }
         private static void TestHeadInput(PetForm form, Theme theme, int percent)
