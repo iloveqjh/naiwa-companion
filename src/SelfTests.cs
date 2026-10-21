@@ -129,10 +129,10 @@ namespace NaiwaCompanion
                 head.Advance(.6 + n / 120.0); min = Math.Min(min, head.Amount);
                 if (head.Amount < 0) crossed = true;
                 if (crossed) secondary = Math.Max(secondary, head.Amount);
-                reaction = Math.Max(reaction, head.Reproach);
+                reaction = Math.Max(reaction, head.ReactionWeight);
             }
             Check(min < -.035 && min > -.09 && secondary > .006, "release gives a stretch overshoot and smaller second squash");
-            Check(reaction > .99 && !head.Active && Math.Abs(head.Amount) < .0001, "short reproach follows rebound and all motion settles");
+            Check(reaction > .99 && !head.Active && Math.Abs(head.Amount) < .0001, "short theme reaction follows rebound and all motion settles");
             head.Begin(3); head.Pull(1000000, 300); for (int n = 1; n <= 120; n++) head.Advance(3 + n / 120.0);
             Check(head.Amount <= .281 && head.Amount > .27, "extreme pointer travel cannot flatten the character indefinitely");
             head.Begin(4); Check(head.Amount > .27, "repeated head press keeps current deformation continuous");
@@ -192,19 +192,28 @@ namespace NaiwaCompanion
                 Check(after.Left >= 2 && after.Right <= pressed.Width - 1, "pressure keeps the expanded body inside its transparent canvas");
                 pressed.Save(Path.Combine(output, "head-pressed.png"));
             }
-            foreach (RectangleF eye in theme.EyeRegions)
-            using (Bitmap lid = Painter.LowerEyelid(theme.Idle, eye, 1))
+            byte[] protectedIdle = Painter.ReadPixels(theme.Idle);
+            a.Head.ReactionDuration = theme.ReactionDuration; a.Head.Release(.6);
+            for (int frame = 1; frame <= 140; frame++)
             {
-                byte[] before = Painter.ReadPixels(theme.Idle), after = Painter.ReadPixels(lid);
-                for (int y = 0; y < theme.Height; y++) for (int x = 0; x < theme.Width; x++)
+                a.Advance(.6 + frame / 60.0, PointF.Empty, theme.Duration, .24, false);
+                using (Bitmap reactionFrame = Painter.Render(theme, a, 85))
                 {
-                    int p = (y * theme.Width + x) * 4;
-                    if (before[p + 3] != after[p + 3]) throw new Exception("eyelid changed alpha");
-                    bool inside = x >= Math.Floor(eye.Left) && x <= Math.Ceiling(eye.Right) && y >= Math.Floor(eye.Top) && y <= Math.Ceiling(eye.Bottom);
-                    if (!inside) for (int c = 0; c < 3; c++) if (before[p + c] != after[p + c]) throw new Exception("eyelid modified body outside iris");
+                    if (reactionFrame.GetPixel(0, 0).A != 0 || reactionFrame.GetPixel(reactionFrame.Width - 1, reactionFrame.Height - 1).A != 0) throw new Exception("theme reaction clipped transparent corners");
+                    if (frame == 40) reactionFrame.Save(Path.Combine(output, "head-theme-reaction.png"));
                 }
             }
-            Check(true, "reproach eyelids preserve alpha and all pixels outside calibrated eyes");
+            Check(!a.Head.Active && !a.Head.Reacting, "theme reaction completes and releases head interaction state");
+            byte[] afterIdle = Painter.ReadPixels(theme.Idle);
+            for (int n = 0; n < afterIdle.Length; n++) if (afterIdle[n] != protectedIdle[n]) throw new Exception("theme reaction altered cached original idle pixels");
+            Check(true, "theme reaction preserves original idle and transparent canvas");
+            Check(theme.Reaction(-1) == theme.Idle && theme.Reaction(theme.ReactionDuration + .1) == theme.Idle, "reaction outside clip returns original idle");
+            if (theme.Original && (!theme.Recorded || theme.Manifest.id == "kungfu" || theme.Manifest.id == "angel" || theme.CanCrawl))
+            {
+                byte[] first = Painter.ReadPixels(theme.Reaction(0)), peak = Painter.ReadPixels(theme.Reaction(theme.ReactionDuration * .48)); int differences = 0;
+                for (int n = 0; n < first.Length; n++) if (first[n] != peak[n]) differences++;
+                Check(differences > 20, "theme reaction uses actual changing source frames");
+            }
         }
         internal static void RenderHeadPress(string assets, string output)
         {
@@ -213,7 +222,7 @@ namespace NaiwaCompanion
             using (Font font = new Font("Microsoft YaHei UI", 18))
             using (Font small = new Font("Microsoft YaHei UI", 12))
             {
-                Animation a = new Animation();
+                Animation a = new Animation(); a.Head.ReactionDuration = theme.ReactionDuration;
                 for (int frame = 0; frame < 240; frame++)
                 {
                     double t = frame / 60.0;
@@ -226,7 +235,7 @@ namespace NaiwaCompanion
                     using (Graphics g = Graphics.FromImage(page))
                     {
                         g.Clear(Color.FromArgb(239, 244, 247));
-                        string stage = t < .45 ? "按住头部，向下压" : t < 1.25 ? "身体压扁，向两侧鼓起" : a.Head.Reproach > .1 ? "弹回来，再幽怨地看你一眼" : t < 2.2 ? "松手：回弹、回摆、停稳" : "恢复安静陪伴";
+                        string stage = t < .45 ? "按住头部，向下压" : t < 1.25 ? "身体压扁，向两侧鼓起" : a.Head.Reacting ? theme.ReactionName : t < 2.2 ? "松手：回弹、回摆、停稳" : "恢复安静陪伴";
                         g.DrawString(stage, font, Brushes.DarkSlateGray, 28, 20);
                         g.DrawString(theme.Name + " · 程序实际渲染 · 60 帧/秒", small, Brushes.SlateGray, 28, 61);
                         int px = (page.Width - pet.Width) / 2, py = 485 - (int)Math.Round((theme.BodyBounds.Bottom - 1) * 1.1);

@@ -19,6 +19,10 @@ namespace NaiwaCompanion
         internal RecordedAction SelectedAction;
         internal bool Recorded { get { return Manifest != null; } }
         internal bool CanCrawl { get { return Recorded && Manifest.locomotionAction != null; } }
+        internal double ReactionDuration { get { return Recorded ? Manifest.id == "angel" ? 1.15 : Manifest.id == "kungfu" || Manifest.id == "taichi" ? 1.25 : CanCrawl ? 1.0 : .75 : .85; } }
+        internal string ReactionName { get { return Recorded ? Manifest.id == "angel" ? "轻闭眼，再柔和睁开" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "推掌侧目，收势回望" : CanCrawl ? "回头瞄一眼" : "安静回望" : "盯一眼，再自然眨眼"; } }
+        internal bool AlignReaction { get { return CanCrawl && !HasPeek; } }
+        private bool HasPeek { get { if (!Recorded) return false; foreach (RecordedAction a in Manifest.actions) if (a.id == "peek") return true; return false; } }
         internal string Name { get { return Recorded ? Manifest.name : Original ? "经典奶蛙" : "内置演示"; } }
         internal string ActionName { get { return Recorded ? SelectedAction.name : "捧腹大笑"; } }
         internal bool ReturnsToIdle { get { return Recorded && SelectedAction.endPose == "idle"; } }
@@ -57,6 +61,7 @@ namespace NaiwaCompanion
         internal double Duration { get { return Frames / Fps; } }
         private ZipArchive archive;
         private Bitmap idle;
+        private int lookFrames = 1;
         private Rectangle bodyBounds;
         internal Rectangle BodyBounds
         {
@@ -103,10 +108,13 @@ namespace NaiwaCompanion
                 Width = Convert.ToInt32(meta["width"]); Height = Convert.ToInt32(meta["height"]);
                 Frames = Convert.ToInt32(meta["frames"]); Fps = Convert.ToDouble(meta["fps"]);
                 BlinkFrames = Convert.ToInt32(meta["blinkFrames"]); BlinkFps = Convert.ToDouble(meta["blinkFps"]);
+                if (meta.ContainsKey("eyeFrames")) lookFrames = Convert.ToInt32(meta["eyeFrames"]);
+                if (lookFrames < 1 || lookFrames > 60) throw new InvalidDataException("眼神帧数无效。");
                 if (Width < 32 || Height < 32 || Width > 1024 || Height > 1024 || Frames < 1 || Frames > 2000 || Fps < 1 || Fps > 120 || BlinkFrames < 1 || BlinkFrames > 60 || BlinkFps < 1 || BlinkFps > 120)
                     throw new InvalidDataException("素材包参数不在支持范围内。");
                 // Reject missing entries before starting animation, so a bad pack cannot fail half way through.
                 Entry("look/00.png", 8 * 1024 * 1024);
+                for (int i = 0; i < lookFrames; i++) Entry("look/" + i.ToString("00") + ".png", 8 * 1024 * 1024);
                 for (int i = 0; i < Frames; i++) Entry("laugh/" + i.ToString("0000") + ".png", 8 * 1024 * 1024);
                 for (int i = 0; i < BlinkFrames; i++) Entry("blink/0/" + i.ToString("00") + ".png", 8 * 1024 * 1024);
                 idle = Decode("look/00.png");
@@ -142,6 +150,30 @@ namespace NaiwaCompanion
             return result;
         }
         internal Bitmap Idle { get { return idle; } }
+        internal Bitmap Reaction(double time)
+        {
+            if (!Original || time < 0 || time >= ReactionDuration) return idle;
+            if (!Recorded)
+            {
+                if (time >= .58)
+                { int frame = Math.Min(BlinkFrames - 1, (int)((time - .58) * BlinkFps)); return Blink(frame); }
+                double p = time < .16 ? Smooth(time / .16) : time < .36 ? 1 : 1 - Smooth((time - .36) / .22);
+                return Cached("look/" + ((int)Math.Round(p * (lookFrames - 1))).ToString("00") + ".png");
+            }
+            string actionId = Manifest.id == "angel" ? "chant" : Manifest.id == "kungfu" || Manifest.id == "taichi" ? "taichi" : CanCrawl ? HasPeek ? "peek" : "chuckle" : "";
+            foreach (RecordedAction action in Manifest.actions) if (action.id == actionId)
+            {
+                int start = Manifest.id == "angel" ? 72 : 0;
+                int end = Manifest.id == "angel" ? 104 : CanCrawl ? HasPeek ? 35 : 25 : 42;
+                start = Math.Min(start, action.frames - 1); end = Math.Min(end, action.frames - 1);
+                double u = time / ReactionDuration;
+                double p = u < .42 ? Smooth(u / .42) : u < .56 ? 1 : 1 - Smooth((u - .56) / .44);
+                int frame = start + (int)Math.Round((end - start) * p);
+                return Cached(action.prefix + frame.ToString("0000") + ".png");
+            }
+            return idle;
+        }
+        private static double Smooth(double value) { value = Math.Max(0, Math.Min(1, value)); return value * value * (3 - 2 * value); }
         internal Bitmap Laugh(int frame) { return Cached((Recorded ? SelectedAction.prefix : "laugh/") + Math.Max(0, Math.Min(Frames - 1, frame)).ToString("0000") + ".png"); }
         internal Bitmap Blink(int frame) { return Recorded ? idle : Cached("blink/0/" + Math.Max(0, Math.Min(BlinkFrames - 1, frame)).ToString("00") + ".png"); }
         internal Bitmap Crawl(double time)

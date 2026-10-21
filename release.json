@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "1.3.0",
+  "version": "1.3.1",
   "platform": "windows",
   "architecture": "anycpu",
-  "downloadUrl": "https://github.com/iloveqjh/naiwa-companion/releases/download/v1.3.0/NaiwaCompanion-Windows-v1.3.0.zip",
-  "sha256": "6891896BA6A11805271B83AD8FB41DA2EAFE1BCE4F49056B66A3DB7BC08A3FD1",
+  "downloadUrl": "https://github.com/iloveqjh/naiwa-companion/releases/download/v1.3.1/NaiwaCompanion-Windows-v1.3.1.zip",
+  "sha256": "7B1E566D8752AB647CF0BD1ED435D3B4AAFF42B93F45A0B9D377BC5AFC40A368",
   "entrypoint": "NaiwaCompanion.exe",
   "originalAssetsBundled": false,
   "originalAssetsManifest": "https://raw.githubusercontent.com/iloveqjh/naiwa-companion/main/assets-source.json",

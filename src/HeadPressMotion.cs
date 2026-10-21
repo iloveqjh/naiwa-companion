@@ -8,16 +8,19 @@ namespace NaiwaCompanion
     {
         internal bool Held;
         internal double Amount, Velocity;
+        internal double ReactionDuration = .85;
         private double target, previous = -1, peak, released = -1, demoAt = -1;
-        internal bool Active { get { return Held || Math.Abs(Amount) > .0001 || Math.Abs(Velocity) > .001 || Reproach > 0 || (released >= 0 && previous < released + 1.55); } }
-        internal double Reproach
+        internal bool Active { get { return Held || Math.Abs(Amount) > .0001 || Math.Abs(Velocity) > .001 || (released >= 0 && previous < released + .32 + ReactionDuration + .10); } }
+        internal double ReactionTime { get { return released < 0 || peak < .045 ? -1 : previous - released - .32; } }
+        internal bool Reacting { get { return ReactionTime >= 0 && ReactionTime < ReactionDuration; } }
+        internal double ReactionWeight
         {
             get
             {
                 if (released < 0 || peak < .045) return 0;
-                double t = previous - released - .42;
-                if (t < 0 || t >= 1.05) return 0;
-                double fade = Math.Min(1, Math.Min(t / .16, (1.05 - t) / .23));
+                double t = ReactionTime;
+                if (t < 0 || t >= ReactionDuration) return 0;
+                double fade = Math.Min(1, Math.Min(t / .09, (ReactionDuration - t) / .13));
                 return fade * fade * (3 - 2 * fade);
             }
         }

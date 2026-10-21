@@ -35,11 +35,7 @@ namespace NaiwaCompanion
             double dt = lastTime < 0 ? 0 : Math.Max(0, Math.Min(.08, now - lastTime));
             lastTime = now; Time = now;
             Head.Advance(now);
-            if (Head.Reproach > 0)
-            {
-                target.X = (float)(target.X * (1 - Head.Reproach) + .38 * Head.Reproach);
-                target.Y = (float)(target.Y * (1 - Head.Reproach) - .72 * Head.Reproach);
-            }
+            if (Head.Reacting) target = PointF.Empty;
             double ease = 1 - Math.Exp(-dt * 12);
             GazeX += (target.X - GazeX) * ease; GazeY += (target.Y - GazeY) * ease;
             if (Laughing && LaughTime >= clipLength) { LaughAt = -1; Resting = true; }

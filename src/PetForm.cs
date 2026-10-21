@@ -33,6 +33,7 @@ namespace NaiwaCompanion
         internal PetForm(Theme loaded, Preferences settings)
         {
             theme = loaded; prefs = settings;
+            Animation.Head.ReactionDuration = theme.ReactionDuration;
             Text = Desktop.WindowName; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None; TopMost = prefs.AlwaysOnTop;
             SetStyle(ControlStyles.StandardClick | ControlStyles.StandardDoubleClick, true);
@@ -177,7 +178,7 @@ namespace NaiwaCompanion
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.3 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.3.1 · " + theme.Name, null, false).Enabled = false;
             BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
             Item("按头回弹（演示）", delegate { DemoHeadPress(); }, false);
@@ -259,6 +260,7 @@ namespace NaiwaCompanion
                     StopLaugh(); Theme previous = theme; theme = replacement; previous.Dispose();
                     if (theme.Recorded) prefs.ThemeFolder = folder; else { prefs.Assets = folder; prefs.ThemeFolder = ""; }
                     Animation.Crawling = false; Animation.FacingLeft = false; RefreshIcon();
+                    Animation.Head.ReactionDuration = theme.ReactionDuration;
                     LoadAudio(); SetSize(prefs.Size); if (theme.Recorded && prefs.RepeatAction && !theme.CanCrawl) repeatAt = Now + .6; Save();
             }
             catch (Exception e) { MessageBox.Show("素材导入失败：" + e.Message, "奶蛙陪伴"); }

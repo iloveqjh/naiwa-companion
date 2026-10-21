@@ -28,6 +28,18 @@ namespace NaiwaCompanion
                     scene.Dispose(); scene = lying;
                 }
             }
+            else if (state.Head.Reacting && !state.Laughing && !state.Dragging)
+            {
+                scene = (Bitmap)theme.Reaction(state.Head.ReactionTime).Clone();
+                if (theme.AlignReaction)
+                {
+                    Bitmap aligned = AlignReaction(scene, theme.BodyBounds); scene.Dispose(); scene = aligned;
+                }
+                if (state.Head.ReactionWeight < .999)
+                {
+                    Bitmap mixed = Mix(scene, theme.Idle, 1 - state.Head.ReactionWeight); scene.Dispose(); scene = mixed;
+                }
+            }
             else if (state.Crawling && !state.Head.Active && theme.CanCrawl && !state.Laughing && !state.Dragging && state.StandAt < 0) scene = (Bitmap)theme.Crawl(state.CrawlTime).Clone();
             else if (state.Resting) scene = (Bitmap)theme.Laugh(theme.Frames - 1).Clone();
             else if (state.StandAt >= 0)
@@ -56,11 +68,6 @@ namespace NaiwaCompanion
             }
             else scene = Warp(theme.Idle, true, state.GazeX, state.GazeY, 0);
 
-            if (state.Head.Reproach > 0 && theme.Original && !state.Laughing && !state.Resting)
-            {
-                foreach (RectangleF eye in theme.EyeRegions)
-                { Bitmap next = LowerEyelid(scene, eye, state.Head.Reproach); scene.Dispose(); scene = next; }
-            }
             if (theme.CanCrawl && state.FacingLeft) scene.RotateFlip(RotateFlipType.RotateNoneFlipX);
             if (state.PokeAt >= 0 && !state.Crawling)
             {
@@ -104,32 +111,23 @@ namespace NaiwaCompanion
                 g.DrawImage(b, new Rectangle(0, 0, b.Width, b.Height), 0, 0, b.Width, b.Height, GraphicsUnit.Pixel, attr);
             }
         }
-        // Move a tiny strip of the existing forehead texture over the iris; keep alpha untouched.
-        internal static Bitmap LowerEyelid(Bitmap input, RectangleF eye, double amount)
+        private static Bitmap Mix(Bitmap first, Bitmap second, double weight)
         {
-            byte[] pixels = ReadPixels(input), output = (byte[])pixels.Clone();
-            int width = input.Width, height = input.Height;
-            int left = Math.Max(0, (int)Math.Floor(eye.Left)), right = Math.Min(width - 1, (int)Math.Ceiling(eye.Right));
-            int top = Math.Max(0, (int)Math.Floor(eye.Top)), bottom = Math.Min(height - 1, (int)Math.Ceiling(eye.Bottom));
-            double cx = eye.X + eye.Width / 2, rx = eye.Width / 2;
-            for (int x = left; x <= right; x++)
-            {
-                double q = (x - cx) / rx; if (Math.Abs(q) >= 1) continue;
-                double edge = eye.Top + eye.Height * .39 * amount * Math.Sqrt(1 - q * q);
-                int sampleY = Math.Max(0, (int)Math.Floor(eye.Top - Math.Max(3, eye.Height * .22)));
-                int source = (sampleY * width + x) * 4;
-                for (int y = top; y <= bottom; y++)
-                {
-                    double weight = Math.Max(0, Math.Min(1, (edge - y) / 1.2));
-                    int p = (y * width + x) * 4;
-                    if (weight <= 0 || pixels[source + 3] < 200) continue;
-                    for (int c = 0; c < 3; c++)
-                        output[p + c] = (byte)Math.Round(pixels[p + c] * (1 - weight) + pixels[source + c] * pixels[p + 3] / (double)pixels[source + 3] * weight);
-                }
-            }
-            Bitmap result = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
-            BitmapData data = result.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
-            try { Marshal.Copy(output, 0, data.Scan0, output.Length); } finally { result.UnlockBits(data); }
+            byte[] a = ReadPixels(first), b = ReadPixels(second);
+            for (int n = 0; n < a.Length; n++) a[n] = (byte)Math.Round(a[n] * (1 - weight) + b[n] * weight);
+            Bitmap result = new Bitmap(first.Width, first.Height, PixelFormat.Format32bppPArgb);
+            BitmapData data = result.LockBits(new Rectangle(0, 0, first.Width, first.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try { Marshal.Copy(a, 0, data.Scan0, a.Length); } finally { result.UnlockBits(data); }
+            return result;
+        }
+        private static Bitmap AlignReaction(Bitmap input, Rectangle target)
+        {
+            byte[] pixels = ReadPixels(input); int left = input.Width, right = 0, bottom = 0;
+            for (int y = 0; y < input.Height; y++) for (int x = 0; x < input.Width; x++) if (pixels[(y * input.Width + x) * 4 + 3] > 28)
+            { left = Math.Min(left, x); right = Math.Max(right, x + 1); bottom = Math.Max(bottom, y + 1); }
+            Bitmap result = new Bitmap(input.Width, input.Height, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(result))
+            { g.CompositingMode = CompositingMode.SourceCopy; g.DrawImageUnscaled(input, (target.Left + target.Right - left - right) / 2, target.Bottom - bottom); }
             return result;
         }
         // Local inverse warping moves existing texture; no replacement face or eye is painted.

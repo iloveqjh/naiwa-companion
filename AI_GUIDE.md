@@ -28,7 +28,7 @@
 | 眼球跟随、回正、平滑速度 | `src/Animation.cs`：`GazeTarget`、`Advance` |
 | 眼球移动幅度、原图局部变形 | `src/Painter.cs`：`Warp` |
 | 戳肚子、拖动回弹、动作时长 | `src/Animation.cs` 与 `src/Painter.cs` |
-| 按头下压、弹性与幽怨表情 | `src/HeadPressMotion.cs`、`src/PetForm.cs` 手势、`src/Painter.cs` 整身变形与眼睑 |
+| 按头下压、弹性与主题短反应 | `src/HeadPressMotion.cs`、`src/PetForm.cs` 手势、`src/Painter.cs` 整身变形、`src/Theme.cs` 原动作帧 |
 | 菜单、声音、全屏、导入素材 | `src/PetForm.cs` |
 | 素材解码、缓存、包格式 | `src/Theme.cs` |
 | 多主题、动作清单、眼部与肚腹校准 | `src/ThemeManifest.cs`、`docs/主题与动作.md` |
