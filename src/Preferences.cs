@@ -11,6 +11,8 @@ namespace NaiwaCompanion
         public int Size = 85, X = int.MinValue, Y = int.MinValue;
         public bool Sound = false, AlwaysOnTop = true, HideFullscreen = true, FollowPointer = true;
         public string Assets = "";
+        public string ThemeFolder = "";
+        public bool RepeatAction;
         internal bool Ephemeral;
         internal static string DirectoryPath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaiwaCompanion"); } }
         internal static Preferences Load()

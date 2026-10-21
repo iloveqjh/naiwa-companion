@@ -11,6 +11,8 @@ namespace NaiwaCompanion
     {
         internal static string Argument(string[] args, string flag)
         { for (int i = 0; i + 1 < args.Length; i++) if (args[i] == flag) return Path.GetFullPath(args[i + 1]); return null; }
+        internal static string Value(string[] args, string flag)
+        { for (int i = 0; i + 1 < args.Length; i++) if (args[i] == flag) return args[i + 1]; return null; }
         [STAThread]
         private static void Main(string[] args)
         {
@@ -32,7 +34,7 @@ namespace NaiwaCompanion
                 }
                 if (Array.IndexOf(args, "--quit") >= 0) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), 0x10, IntPtr.Zero, IntPtr.Zero); return; }
                 Preferences prefs = Preferences.Load(); string folder = Argument(args, "--assets");
-                if (folder == null) folder = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "素材.nwp")) ? AppDomain.CurrentDomain.BaseDirectory : prefs.Assets;
+                if (folder == null) folder = !String.IsNullOrEmpty(prefs.ThemeFolder) && File.Exists(Path.Combine(prefs.ThemeFolder, "theme.nct")) ? prefs.ThemeFolder : File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "素材.nwp")) ? AppDomain.CurrentDomain.BaseDirectory : prefs.Assets;
                 output = Argument(args, "--self-test");
                 if (output != null) { Environment.ExitCode = SelfTests.Run(folder, output); return; }
                 output = Argument(args, "--render");
@@ -42,11 +44,27 @@ namespace NaiwaCompanion
                 {
                     if (!first) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), Desktop.WakeMessage, IntPtr.Zero, IntPtr.Zero); return; }
                     Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e) { Report(e.Exception); Application.Exit(); };
-                    Theme theme;
+                    Theme theme = null;
                     try { theme = new Theme(folder); }
-                    catch (Exception e) { Preferences.Log(e); MessageBox.Show("原版素材暂时无法读取，将使用内置演示形象。\n右键桌宠可重新导入素材。\n\n" + e.Message, "奶蛙陪伴"); theme = new Theme(null); }
-                    if (!String.IsNullOrEmpty(folder) && theme.Original) prefs.Assets = folder;
-                    using (theme) using (PetForm pet = new PetForm(theme, prefs)) Application.Run(pet);
+                    catch (Exception e) { Preferences.Log(e); MessageBox.Show("素材暂时无法读取，请重新准备原版素材。\n\n" + e.Message, "奶蛙陪伴"); }
+                    if (theme == null || !theme.Original)
+                    {
+                        if (theme != null) theme.Dispose();
+                        using (AssetSetupForm setup = new AssetSetupForm())
+                        {
+                            if (setup.ShowDialog() != DialogResult.OK) return;
+                            folder = setup.SelectedFolder; theme = new Theme(folder);
+                            if (!theme.Original) { theme.Dispose(); return; }
+                        }
+                    }
+                    if (!String.IsNullOrEmpty(folder) && theme.Original) { if (theme.Recorded) prefs.ThemeFolder = folder; else { prefs.Assets = folder; prefs.ThemeFolder = ""; } }
+                    if (Array.IndexOf(args, "--repeat") >= 0) prefs.RepeatAction = true;
+                    using (theme) using (PetForm pet = new PetForm(theme, prefs))
+                    {
+                        string action = Value(args, "--play");
+                        if (action != null) pet.Shown += delegate { pet.PlayAction(action); };
+                        Application.Run(pet);
+                    }
                 }
             }
             catch (Exception e) { Report(e); Environment.ExitCode = 1; }

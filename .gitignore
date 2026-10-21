@@ -1,6 +1,10 @@
 dist/
 test-output/
 *.nwp
+*.nct
+themes/
+docs/demo/
+*.local.json
 *.wav
 *.mp4
 *.webp

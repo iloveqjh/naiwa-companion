@@ -23,6 +23,7 @@ namespace NaiwaCompanion
         private byte[] alphaPixels;
         private Point dragOrigin, lastPointer;
         private double lastMoveAt, checkAt, fullscreenSince;
+        private double repeatAt = -1;
         private bool hidden, fullscreenCandidate, menuOpen, ready;
         private string lastFrame = "";
         internal bool HiddenByFullscreen { get { return hidden; } }
@@ -48,7 +49,7 @@ namespace NaiwaCompanion
             tray.Icon = petIcon; tray.Text = "奶蛙陪伴 · 双击笑 / 拖动 / 右键设置"; tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { Home(); if (!hidden) { Show(); Render(true); } Save(); };
             timer.Interval = 16; timer.Tick += delegate { Tick(); };
-            Shown += delegate { ready = true; tray.Visible = true; Render(true); timer.Start(); };
+            Shown += delegate { ready = true; tray.Visible = !prefs.Ephemeral; Render(true); timer.Start(); if (theme.Recorded && prefs.RepeatAction) repeatAt = Now + .6; };
             menu.Opening += delegate { menuOpen = true; BuildMenu(); };
             menu.Closed += delegate { menuOpen = false; };
         }
@@ -86,10 +87,16 @@ namespace NaiwaCompanion
             if (hidden) return;
             Point p = PointToClient(Cursor.Position);
             bool hovered = Hit(p) || menuOpen || pointer.Held;
-            PointF target = NaiwaCompanion.Animation.GazeTarget(p, ClientSize, hovered, prefs.FollowPointer);
+            PointF target = NaiwaCompanion.Animation.GazeTarget(p, ClientSize, hovered, prefs.FollowPointer, theme.GazeOrigin(prefs.Size));
             bool wasLaughing = Animation.Laughing;
-            Animation.Advance(now, target, theme.Duration, theme.BlinkFrames / theme.BlinkFps);
-            if (wasLaughing && !Animation.Laughing && audio != null) audio.Stop();
+            Animation.Advance(now, target, theme.Duration, theme.BlinkFrames / theme.BlinkFps, !theme.Recorded);
+            if (wasLaughing && !Animation.Laughing)
+            {
+                if (audio != null) audio.Stop();
+                if (theme.ReturnsToIdle) Animation.Stand(now);
+                if (prefs.RepeatAction) repeatAt = now + .85;
+            }
+            if (repeatAt >= 0 && now >= repeatAt && !pointer.Held && !menuOpen) { repeatAt = -1; Laugh(); }
             Render(false);
             // When the gaze settles, reduce idle wakeups. Playback still uses its own clock.
             bool changingEyes = Math.Abs(Animation.GazeX - target.X) + Math.Abs(Animation.GazeY - target.Y) > .01;
@@ -99,6 +106,7 @@ namespace NaiwaCompanion
         {
             if (hidden == value) return;
             hidden = value; bool resting = Animation.Resting;
+            repeatAt = -1;
             Animation.Stop(Now); Animation.Resting = resting;
             if (audio != null) audio.Stop(); pointer.Cancel(); Capture = false;
             if (value) { Hide(); timer.Interval = 150; }
@@ -107,7 +115,7 @@ namespace NaiwaCompanion
         internal void Render(bool force)
         {
             if (!IsHandleCreated || hidden || IsDisposed) return;
-            string key = prefs.Size + "/" + (Animation.Resting ? "rest" : Animation.Laughing ? "laugh" + (int)(Animation.LaughTime * theme.Fps) : Animation.Blinking ? "blink" + (int)((Animation.Time - Animation.BlinkAt) * theme.BlinkFps) : "eye" + Math.Round(Animation.GazeX * 30) + "," + Math.Round(Animation.GazeY * 30));
+            string key = prefs.Size + "/" + theme.ActionName + "/" + (Animation.Resting ? "rest" : Animation.Laughing ? "laugh" + (int)(Animation.LaughTime * theme.Fps) : Animation.Blinking ? "blink" + (int)((Animation.Time - Animation.BlinkAt) * theme.BlinkFps) : "eye" + Math.Round(Animation.GazeX * 30) + "," + Math.Round(Animation.GazeY * 30));
             if (Animation.PokeAt >= 0 || Animation.DropAt >= 0 || Animation.StandAt >= 0 || Animation.Dragging || Math.Abs(Animation.Tilt) > .01) key += "/" + (int)(Now * 60);
             if (!force && key == lastFrame) return;
             using (Bitmap image = Painter.Render(theme, Animation, prefs.Size))
@@ -124,18 +132,33 @@ namespace NaiwaCompanion
         internal bool Laugh()
         {
             if (hidden || !Animation.StartLaugh(Now)) return false;
+            repeatAt = -1;
             if (prefs.Sound && audio != null) audio.Play(); Render(true); return true;
         }
-        private void StopLaugh() { Animation.Stop(Now); if (audio != null) audio.Stop(); Render(true); }
+        private void StopLaugh() { repeatAt = -1; Animation.Stop(Now); if (audio != null) audio.Stop(); Render(true); }
+        internal void PlayAction(string id)
+        { StopLaugh(); theme.SelectAction(id); Laugh(); }
         private ToolStripMenuItem Item(string label, EventHandler action, bool selected)
         { ToolStripMenuItem result = new ToolStripMenuItem(label, null, action); result.Checked = selected; menu.Items.Add(result); return result; }
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.0 · " + (theme.Original ? "原版素材" : "内置演示"), null, false).Enabled = false;
+            Item("奶蛙陪伴 1.1 · " + theme.Name, null, false).Enabled = false;
+            BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
-            Item("捧腹大笑（双击）", delegate { Laugh(); }, false);
-            Item("停止大笑 / 站起来", delegate { if (Animation.Resting) Animation.Stand(Now); else StopLaugh(); Render(true); }, false);
+            Item(theme.ActionName + "（双击）", delegate { Laugh(); }, false);
+            if (theme.Recorded)
+            {
+                ToolStripMenuItem actions = Item("选择动作", null, false);
+                foreach (RecordedAction action in theme.Manifest.actions)
+                {
+                    string id = action.id;
+                    ToolStripMenuItem item = new ToolStripMenuItem(action.name, null, delegate { PlayAction(id); });
+                    item.Checked = id == theme.SelectedAction.id; actions.DropDownItems.Add(item);
+                }
+            }
+            Item("循环当前动作", delegate { prefs.RepeatAction = !prefs.RepeatAction; if (!prefs.RepeatAction) repeatAt = -1; Save(); }, prefs.RepeatAction);
+            Item(theme.Recorded ? "停止动作 / 恢复待机" : "停止大笑 / 站起来", delegate { if (Animation.Resting) Animation.Stand(Now); else StopLaugh(); Render(true); }, false);
             Item("身外跟随，身上回正", delegate { prefs.FollowPointer = !prefs.FollowPointer; Save(); }, prefs.FollowPointer);
             ToolStripMenuItem sound = Item("原版笑声", delegate { prefs.Sound = !prefs.Sound; if (!prefs.Sound && audio != null) audio.Stop(); Save(); }, prefs.Sound); sound.Enabled = audio != null;
             menu.Items.Add(new ToolStripSeparator());
@@ -158,11 +181,35 @@ namespace NaiwaCompanion
             Item("项目与素材来源", delegate { Process.Start("https://github.com/iloveqjh/naiwa-companion"); }, false);
             menu.Items.Add(new ToolStripSeparator()); Item("退出奶蛙", delegate { Close(); }, false);
         }
+        private void BuildThemesMenu()
+        {
+            ToolStripMenuItem themes = Item("切换主题", null, false);
+            ToolStripMenuItem classic = new ToolStripMenuItem("经典奶蛙", null, delegate { SwitchTheme(prefs.Assets); });
+            classic.Checked = !theme.Recorded; themes.DropDownItems.Add(classic);
+            System.Collections.Generic.HashSet<string> visited = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string[] roots = { Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "themes"), Path.Combine(Preferences.DirectoryPath, "themes") };
+            foreach (string root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                foreach (string folder in Directory.GetDirectories(root))
+                {
+                    if (!File.Exists(Path.Combine(folder, "theme.nct")) || !visited.Add(Path.GetFullPath(folder))) continue;
+                    try
+                    {
+                        string path = folder;
+                        ToolStripMenuItem entry = new ToolStripMenuItem(ThemeManifest.DisplayName(folder), null, delegate { SwitchTheme(path); });
+                        entry.Checked = String.Equals(Path.GetFullPath(folder), Path.GetFullPath(theme.Folder ?? "."), StringComparison.OrdinalIgnoreCase); themes.DropDownItems.Add(entry);
+                    }
+                    catch (Exception e) { Preferences.Log(e); }
+                }
+            }
+            if (themes.DropDownItems.Count == 1) { ToolStripMenuItem hint = new ToolStripMenuItem("将动作包放入 themes 文件夹"); hint.Enabled = false; themes.DropDownItems.Add(hint); }
+        }
         private void ImportTheme()
         {
             using (FolderBrowserDialog dialog = new FolderBrowserDialog())
             {
-                dialog.Description = "选择同时包含 素材.nwp 和 原版笑声.wav 的文件夹";
+                dialog.Description = "选择包含 素材.nwp 或 theme.nct 的素材文件夹";
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 SwitchTheme(dialog.SelectedPath);
             }
@@ -172,9 +219,10 @@ namespace NaiwaCompanion
             try
             {
                     Theme replacement = new Theme(folder);
-                    if (!replacement.Original) { replacement.Dispose(); throw new InvalidDataException("这个文件夹中没有素材.nwp。"); }
+                    if (!replacement.Original) { replacement.Dispose(); throw new InvalidDataException("这个文件夹中没有素材.nwp 或 theme.nct。"); }
                     StopLaugh(); Theme previous = theme; theme = replacement; previous.Dispose();
-                    prefs.Assets = folder; LoadAudio(); SetSize(prefs.Size); Save();
+                    if (theme.Recorded) prefs.ThemeFolder = folder; else { prefs.Assets = folder; prefs.ThemeFolder = ""; }
+                    LoadAudio(); SetSize(prefs.Size); if (theme.Recorded && prefs.RepeatAction) repeatAt = Now + .6; Save();
             }
             catch (Exception e) { MessageBox.Show("素材导入失败：" + e.Message, "奶蛙陪伴"); }
         }
@@ -187,7 +235,7 @@ namespace NaiwaCompanion
         {
             int bottom = Bottom, center = Left + Width / 2; prefs.Size = Math.Max(50, Math.Min(150, percent));
             ClientSize = new Size(theme.Width * prefs.Size / 100, theme.Height * prefs.Size / 100);
-            Location = Clamp(new Point(center - Width / 2, bottom - Height), Size); Render(true); Save();
+            Location = prefs.Ephemeral ? new Point(-20000, -20000) : Clamp(new Point(center - Width / 2, bottom - Height), Size); Render(true); Save();
         }
         internal static Point Clamp(Point desired, Size size)
         {
@@ -212,7 +260,7 @@ namespace NaiwaCompanion
             base.OnMouseMove(e); if (!pointer.Held) return;
             Point p = PointToScreen(e.Location); pointer.Move(p);
             if (!pointer.Moved) return;
-            if (!Animation.Dragging) { Animation.BeginDrag(Now); if (audio != null) audio.Stop(); }
+            if (!Animation.Dragging) { repeatAt = -1; Animation.BeginDrag(Now); if (audio != null) audio.Stop(); }
             Animation.DragVelocity(Now, p.X - lastPointer.X, Now - lastMoveAt); lastMoveAt = Now; lastPointer = p;
             Location = new Point(dragOrigin.X + p.X - pointer.Origin.X, dragOrigin.Y + p.Y - pointer.Origin.Y); Render(true);
         }
@@ -224,7 +272,7 @@ namespace NaiwaCompanion
             if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Save(); }
             else if (twice) Laugh();
             else if (Animation.Resting) Animation.Stand(Now);
-            else Animation.Poke(Now, new PointF(e.X * 100f / prefs.Size, e.Y * 100f / prefs.Size), new Size(theme.Width, theme.Height));
+            else Animation.Poke(Now, new PointF(e.X * 100f / prefs.Size, e.Y * 100f / prefs.Size), new Size(theme.Width, theme.Height), theme.Belly);
             Render(true);
         }
         protected override void OnMouseCaptureChanged(EventArgs e)

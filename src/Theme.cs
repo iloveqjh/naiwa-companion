@@ -15,6 +15,20 @@ namespace NaiwaCompanion
         internal int Width = 288, Height = 368, Frames = 150, BlinkFrames = 7;
         internal double Fps = 30, BlinkFps = 30;
         internal string AudioFile, Folder;
+        internal ThemeManifest Manifest;
+        internal RecordedAction SelectedAction;
+        internal bool Recorded { get { return Manifest != null; } }
+        internal string Name { get { return Recorded ? Manifest.name : Original ? "经典奶蛙" : "内置演示"; } }
+        internal string ActionName { get { return Recorded ? SelectedAction.name : "捧腹大笑"; } }
+        internal bool ReturnsToIdle { get { return Recorded && SelectedAction.endPose == "idle"; } }
+        internal RectangleF? Belly { get { return Recorded && Manifest.belly != null ? (RectangleF?)Manifest.belly.Rectangle : null; } }
+        internal PointF? GazeOrigin(int scale)
+        {
+            if (!Recorded || Manifest.eyes == null || Manifest.eyes.Length == 0) return null;
+            float x = 0, y = 0;
+            foreach (EyeArea e in Manifest.eyes) { x += e.x + e.width / 2; y += e.y + e.height / 2; }
+            return new PointF(x / Manifest.eyes.Length * scale / 100, y / Manifest.eyes.Length * scale / 100);
+        }
         internal bool Original { get { return archive != null; } }
         internal double Duration { get { return Frames / Fps; } }
         private ZipArchive archive;
@@ -26,6 +40,19 @@ namespace NaiwaCompanion
         internal Theme(string folder)
         {
             Folder = folder;
+            string recordedPath = Path.Combine(folder ?? "", "theme.nct");
+            if (!String.IsNullOrEmpty(folder) && File.Exists(recordedPath))
+            {
+                try
+                {
+                    if (new FileInfo(recordedPath).Length > 256 * 1024 * 1024) throw new InvalidDataException("主题包大于 256 MB。");
+                    archive = ZipFile.OpenRead(recordedPath);
+                    if (archive.Entries.Count > 5100) throw new InvalidDataException("主题条目过多。");
+                    Manifest = ThemeManifest.Load(archive); Width = Manifest.width; Height = Manifest.height;
+                    BlinkFrames = 1; BlinkFps = 30; idle = Decode(Manifest.idle); SelectAction(Manifest.actions[0].id); return;
+                }
+                catch { Dispose(); throw; }
+            }
             string path = Path.Combine(folder ?? "", "素材.nwp");
             if (String.IsNullOrEmpty(folder) || !File.Exists(path)) { idle = DrawDemo(0, 0, 0, false); return; }
             if (new FileInfo(path).Length > 100 * 1024 * 1024) throw new InvalidDataException("素材包大于 100 MB，无法加载。");
@@ -77,8 +104,15 @@ namespace NaiwaCompanion
             return result;
         }
         internal Bitmap Idle { get { return idle; } }
-        internal Bitmap Laugh(int frame) { return Cached("laugh/" + Math.Max(0, Math.Min(Frames - 1, frame)).ToString("0000") + ".png"); }
-        internal Bitmap Blink(int frame) { return Cached("blink/0/" + Math.Max(0, Math.Min(BlinkFrames - 1, frame)).ToString("00") + ".png"); }
+        internal Bitmap Laugh(int frame) { return Cached((Recorded ? SelectedAction.prefix : "laugh/") + Math.Max(0, Math.Min(Frames - 1, frame)).ToString("0000") + ".png"); }
+        internal Bitmap Blink(int frame) { return Recorded ? idle : Cached("blink/0/" + Math.Max(0, Math.Min(BlinkFrames - 1, frame)).ToString("00") + ".png"); }
+        internal void SelectAction(string id)
+        {
+            if (!Recorded) return;
+            foreach (RecordedAction action in Manifest.actions) if (action.id == id)
+            { SelectedAction = action; Frames = action.frames; Fps = action.fps; return; }
+            throw new InvalidDataException("主题中没有这个动作。");
+        }
 
         // An original vector demo is included so the open-source program also runs without external artwork.
         internal static Bitmap DrawDemo(double gx, double gy, double phase, bool closed)

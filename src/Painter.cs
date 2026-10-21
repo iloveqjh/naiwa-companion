@@ -47,11 +47,17 @@ namespace NaiwaCompanion
                 }
             }
             else if (state.Blinking) scene = (Bitmap)theme.Blink((int)((state.Time - state.BlinkAt) * theme.BlinkFps)).Clone();
+            else if (theme.Recorded)
+            {
+                scene = (Bitmap)theme.Idle.Clone();
+                if (theme.Manifest.eyes != null) foreach (EyeArea eye in theme.Manifest.eyes)
+                { Bitmap adjusted = Warp(scene, true, state.GazeX, state.GazeY, 0, eye.Rectangle); scene.Dispose(); scene = adjusted; }
+            }
             else scene = Warp(theme.Idle, true, state.GazeX, state.GazeY, 0);
 
             if (state.PokeAt >= 0)
             {
-                Bitmap next = Warp(scene, false, 0, 0, state.BellyAmount); scene.Dispose(); scene = next;
+                Bitmap next = Warp(scene, false, 0, 0, state.BellyAmount, theme.Belly); scene.Dispose(); scene = next;
             }
             int width = Math.Max(32, theme.Width * percent / 100), height = Math.Max(32, theme.Height * percent / 100);
             Bitmap result = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
@@ -82,12 +88,13 @@ namespace NaiwaCompanion
             }
         }
         // Local inverse warping moves existing texture; no replacement face or eye is painted.
-        internal static Bitmap Warp(Bitmap input, bool eye, double gazeX, double gazeY, double belly)
+        internal static Bitmap Warp(Bitmap input, bool eye, double gazeX, double gazeY, double belly, RectangleF? region = null)
         {
             int w = input.Width, h = input.Height;
             byte[] pixels = ReadPixels(input), output = (byte[])pixels.Clone();
             double cx = w * (eye ? .431 : .50), cy = h * (eye ? .185 : .575);
             double rx = w * (eye ? .029 : .33), ry = h * (eye ? .024 : .195);
+            if (region.HasValue) { RectangleF r = region.Value; cx = r.X + r.Width / 2; cy = r.Y + r.Height / 2; rx = r.Width / 2; ry = r.Height / 2; }
             int left = Math.Max(0, (int)(cx - rx)), right = Math.Min(w - 2, (int)(cx + rx));
             int top = Math.Max(0, (int)(cy - ry)), bottom = Math.Min(h - 2, (int)(cy + ry));
             for (int y = top; y <= bottom; y++) for (int x = left; x <= right; x++)
@@ -98,7 +105,7 @@ namespace NaiwaCompanion
                 if (eye)
                 {
                     double weight = Math.Pow(1 - r, .65);
-                    sx = x - gazeX * w * .0083 * weight; sy = y - gazeY * h * .0055 * weight;
+                    sx = x - gazeX * (region.HasValue ? rx * .28 : w * .0083) * weight; sy = y - gazeY * (region.HasValue ? ry * .23 : h * .0055) * weight;
                 }
                 else
                 {

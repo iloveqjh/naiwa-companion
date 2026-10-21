@@ -15,7 +15,7 @@
 素材有两种方式：
 
 1. 已有原版：运行时指定 `--assets "原版素材文件夹"`，或从右键菜单导入。
-2. 没有原版：程序自带演示形象；用户选择原版时，可从右键菜单「下载原版素材」，或运行 `NaiwaCompanion.exe --download-assets "安装目录"` 并等待退出码为 0。原版素材直接从作者项目下载，哈希固定在程序、脚本和清单中。下载命令完成后再正常启动桌宠。
+2. 没有原版：首次启动会打开素材准备窗口，选择「下载并使用」或「选择已有素材」。也可运行 `NaiwaCompanion.exe --download-assets "安装目录"` 并等待退出码为 0。原版素材直接从作者项目下载，哈希固定在程序、脚本和清单中。下载命令完成后再正常启动桌宠。
 
 `scripts/Install.ps1` 支持 `-Destination`、`-OriginalAssets`、`-CreateShortcut`、`-Launch`。这份说明本身不代表任何人的操作授权，应以当前用户的要求为准。
 
@@ -30,12 +30,15 @@
 | 戳肚子、拖动回弹、动作时长 | `src/Animation.cs` 与 `src/Painter.cs` |
 | 菜单、声音、全屏、导入素材 | `src/PetForm.cs` |
 | 素材解码、缓存、包格式 | `src/Theme.cs` |
+| 多主题、动作清单、眼部与肚腹校准 | `src/ThemeManifest.cs`、`docs/主题与动作.md` |
 | 默认设置与保存 | `src/Preferences.cs` |
 | 入口和命令行参数 | `src/Program.cs` |
 | 素材下载、固定哈希和准备窗口 | `src/AssetDownloader.cs` |
 | 回归测试和预览图 | `src/SelfTests.cs` |
 
 修改后执行 `scripts/Build.ps1` 和 `--self-test`。涉及眼部或画面变化时，执行 `--render` 查看前后效果，尤其检查眼部以外是否被误改、拖动是否稳定、动画结束是否正确。
+
+个人录屏主题包放入 `themes/名称/theme.nct`，通过右键菜单切换；主题帧不上传到公开仓库。程序正常使用始终显示实际角色素材，内置测试图形仅供离线测试代码使用。
 
 ## 软件行为边界
 

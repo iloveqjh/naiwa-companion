@@ -17,16 +17,17 @@ namespace NaiwaCompanion
         internal double LaughTime { get { return Math.Max(0, Time - LaughAt); } }
         internal bool Active { get { return Laughing || Blinking || Dragging || PokeAt >= 0 || DropAt >= 0 || StandAt >= 0 || Math.Abs(Tilt) > .01; } }
 
-        internal static PointF GazeTarget(PointF pointer, SizeF size, bool onBody, bool enabled)
+        internal static PointF GazeTarget(PointF pointer, SizeF size, bool onBody, bool enabled, PointF? origin = null)
         {
             if (onBody || !enabled) return PointF.Empty;
-            double dx = (pointer.X - size.Width * .431) / Math.Max(180, size.Width * 1.8);
-            double dy = (pointer.Y - size.Height * .185) / Math.Max(180, size.Height * 1.3);
+            PointF eye = origin ?? new PointF(size.Width * .431f, size.Height * .185f);
+            double dx = (pointer.X - eye.X) / Math.Max(180, size.Width * 1.8);
+            double dy = (pointer.Y - eye.Y) / Math.Max(180, size.Height * 1.3);
             // A soft bound avoids a sudden stop when the pointer moves far away.
             return new PointF((float)Math.Tanh(dx), (float)Math.Tanh(dy));
         }
 
-        internal void Advance(double now, PointF target, double clipLength, double blinkLength)
+        internal void Advance(double now, PointF target, double clipLength, double blinkLength, bool allowBlink = true)
         {
             double dt = lastTime < 0 ? 0 : Math.Max(0, Math.Min(.08, now - lastTime));
             lastTime = now; Time = now;
@@ -37,7 +38,7 @@ namespace NaiwaCompanion
             if (PokeAt >= 0 && now - PokeAt > 1.05) PokeAt = -1;
             if (DropAt >= 0 && now - DropAt > .85) DropAt = -1;
             if (StandAt >= 0 && now - StandAt > .26) StandAt = -1;
-            if (!Laughing && !Resting && !Dragging && PokeAt < 0 && DropAt < 0 && StandAt < 0 && !Blinking && now >= nextBlink) BlinkAt = now;
+            if (allowBlink && !Laughing && !Resting && !Dragging && PokeAt < 0 && DropAt < 0 && StandAt < 0 && !Blinking && now >= nextBlink) BlinkAt = now;
             if (!Dragging || now - lastDrag > .09) desiredTilt = 0;
             int parts = Math.Max(1, (int)Math.Ceiling(dt / .006));
             for (int i = 0; i < parts; i++)
@@ -58,9 +59,10 @@ namespace NaiwaCompanion
         }
         internal void Stop(double now) { Time = now; LaughAt = -1; Resting = Dragging = false; ClearSmall(); }
         internal void Stand(double now) { Stop(now); StandAt = now; }
-        internal bool Poke(double now, PointF p, Size size)
+        internal bool Poke(double now, PointF p, Size size, RectangleF? area = null)
         {
-            double x = (p.X / size.Width - .50) / .245, y = (p.Y / size.Height - .57) / .19;
+            RectangleF belly = area ?? new RectangleF(size.Width * .255f, size.Height * .38f, size.Width * .49f, size.Height * .38f);
+            double x = (p.X - belly.X - belly.Width / 2) / (belly.Width / 2), y = (p.Y - belly.Y - belly.Height / 2) / (belly.Height / 2);
             if (x * x + y * y > 1 || Laughing || Resting || Dragging) return false;
             Time = now; ClearSmall(); PokeAt = now; return true;
         }

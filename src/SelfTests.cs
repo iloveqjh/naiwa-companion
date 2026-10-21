@@ -24,6 +24,11 @@ namespace NaiwaCompanion
             {
                 using (Theme theme = new Theme(assets))
                 {
+                    if (theme.Recorded)
+                    {
+                        TestRecorded(theme, output);
+                        log.Add("RESULT PASS"); File.WriteAllLines(Path.Combine(output, "results.txt"), log, new UTF8Encoding(false)); return 0;
+                    }
                     PointF left = Animation.GazeTarget(new PointF(-900, 50), new SizeF(288, 368), false, true);
                     PointF right = Animation.GazeTarget(new PointF(900, 50), new SizeF(288, 368), false, true);
                     PointF down = Animation.GazeTarget(new PointF(124, 1500), new SizeF(288, 368), false, true);
@@ -97,12 +102,91 @@ namespace NaiwaCompanion
                     { using (StreamWriter w = new StreamWriter(zip.CreateEntry("metadata.json").Open())) w.Write("{\"width\":99999,\"height\":368,\"frames\":1,\"fps\":30,\"blinkFrames\":7,\"blinkFps\":30}"); }
                     bool rejected = false; try { using (Theme bad = new Theme(invalidDir)) { } } catch (InvalidDataException) { rejected = true; }
                     Check(rejected, "invalid asset dimensions are rejected");
+                    TestRecordedFixture(output);
                 }
                 log.Add("RESULT PASS"); File.WriteAllLines(Path.Combine(output, "results.txt"), log, new UTF8Encoding(false)); return 0;
             }
             catch (Exception e) { log.Add(e.ToString()); log.Add("RESULT FAIL"); File.WriteAllLines(Path.Combine(output, "results.txt"), log, new UTF8Encoding(false)); return 1; }
         }
         private static void CheckRegion(bool ok) { if (!ok) throw new Exception("belly warp changed protected face or feet"); }
+        private static void TestRecorded(Theme theme, string output)
+        {
+            Check(theme.Recorded && theme.Manifest.actions.Length > 0, "recorded theme manifest and action list load");
+            Check(theme.Idle.GetPixel(0, 0).A == 0, "recorded theme has transparent canvas corners");
+            string first = theme.Manifest.actions[0].id;
+            foreach (RecordedAction action in theme.Manifest.actions)
+            {
+                theme.SelectAction(action.id);
+                Check(theme.Frames == action.frames && Math.Abs(theme.Duration - action.frames / action.fps) < .001, action.name + ": independent frame count and duration");
+                Animation state = new Animation(); state.StartLaugh(0);
+                Stopwatch sw = Stopwatch.StartNew();
+                for (int i = 0; i < action.frames; i++)
+                {
+                    state.Advance(i / action.fps, PointF.Empty, theme.Duration, 1.0 / 30, false);
+                    using (Bitmap image = Painter.Render(theme, state, 65))
+                    {
+                        if (image.GetPixel(0, 0).A != 0 || image.GetPixel(image.Width - 1, image.Height - 1).A != 0) throw new Exception("non-transparent theme corner");
+                        if (i == action.frames / 2) image.Save(Path.Combine(output, action.id + ".png"), ImageFormat.Png);
+                    }
+                }
+                sw.Stop();
+                Check(theme.CacheCount <= 16, action.name + ": every frame rendered with bounded cache");
+                log.Add("METRIC " + action.id + " render ms/frame=" + (sw.Elapsed.TotalMilliseconds / action.frames).ToString("F2"));
+                state.Advance(theme.Duration + .01, PointF.Empty, theme.Duration, 1.0 / 30, false);
+                Check(state.Resting && !state.Laughing, action.name + ": playback completes");
+                if (theme.ReturnsToIdle) { state.Stand(theme.Duration + .01); Check(!state.Resting && state.StandAt >= 0, action.name + ": returns through transition to idle"); }
+            }
+            theme.SelectAction(first);
+            bool rejected = false; try { theme.SelectAction("does-not-exist"); } catch (InvalidDataException) { rejected = true; }
+            Check(rejected, "unknown recorded action rejected without replacing active action");
+            using (Bitmap moved = Painter.Render(theme, new Animation { GazeX = 1, GazeY = -.7 }, 100))
+            {
+                byte[] before = Painter.ReadPixels(theme.Idle), after = Painter.ReadPixels(moved);
+                // Pixel-for-pixel checks of the warp itself avoid scaling interpolation differences.
+                using (Bitmap warped = RecordedGaze(theme, 1, -.7))
+                {
+                    byte[] changed = Painter.ReadPixels(warped); int differences = 0;
+                    for (int y = 0; y < theme.Height; y++) for (int x = 0; x < theme.Width; x++)
+                    {
+                        int p = (y * theme.Width + x) * 4;
+                        bool diff = false; for (int c = 0; c < 4; c++) if (before[p + c] != changed[p + c]) diff = true;
+                        if (!diff) continue; differences++;
+                        bool inside = false; if (theme.Manifest.eyes != null) foreach (EyeArea eye in theme.Manifest.eyes) if (eye.Rectangle.Contains(x, y)) inside = true;
+                        if (!inside) throw new Exception("recorded gaze changed pixels outside eye calibration");
+                    }
+                    Check(differences > 0 || theme.Manifest.eyes == null || theme.Manifest.eyes.Length == 0, "recorded gaze changes only calibrated eye regions");
+                }
+            }
+            Preferences prefs = new Preferences { Ephemeral = true };
+            using (Theme another = new Theme(theme.Folder)) using (PetForm form = new PetForm(another, prefs))
+            {
+                form.Location = new Point(-20000, -20000); form.Show(); Application.DoEvents();
+                form.PlayAction(first); Check(form.Animation.Laughing, "recorded menu action starts native playback");
+                form.SetHidden(true); Check(!form.Animation.Laughing, "recorded playback stops when hidden");
+                form.SetHidden(false); form.Close();
+            }
+        }
+        private static Bitmap RecordedGaze(Theme theme, double x, double y)
+        {
+            Bitmap result = (Bitmap)theme.Idle.Clone();
+            if (theme.Manifest.eyes != null) foreach (EyeArea eye in theme.Manifest.eyes)
+            { Bitmap next = Painter.Warp(result, true, x, y, 0, eye.Rectangle); result.Dispose(); result = next; }
+            return result;
+        }
+        private static void TestRecordedFixture(string output)
+        {
+            string folder = Path.Combine(output, "recorded-fixture"); Directory.CreateDirectory(folder);
+            string pack = Path.Combine(folder, "theme.nct");
+            using (FileStream file = new FileStream(pack, FileMode.Create))
+            using (ZipArchive zip = new ZipArchive(file, ZipArchiveMode.Create))
+            {
+                using (Bitmap idle = Theme.DrawDemo(0, 0, 0, false)) using (Stream s = zip.CreateEntry("idle.png").Open()) idle.Save(s, ImageFormat.Png);
+                for (int i = 0; i < 4; i++) using (Bitmap frame = Theme.DrawDemo(0, 0, i * .2 + .01, false)) using (Stream s = zip.CreateEntry("actions/wave/" + i.ToString("0000") + ".png").Open()) frame.Save(s, ImageFormat.Png);
+                using (StreamWriter w = new StreamWriter(zip.CreateEntry("manifest.json").Open()))
+                    w.Write("{\"schemaVersion\":1,\"id\":\"test\",\"name\":\"Test theme\",\"width\":288,\"height\":368,\"idle\":\"idle.png\",\"eyes\":[{\"x\":110,\"y\":57,\"width\":18,\"height\":22}],\"actions\":[{\"id\":\"wave\",\"name\":\"Wave\",\"frames\":4,\"fps\":30,\"prefix\":\"actions/wave/\",\"endPose\":\"idle\"}]}");
+            }
+            using (Theme fixture = new Theme(folder)) TestRecorded(fixture, output);
+        }
         internal static void Render(string assets, string output)
         {
             Directory.CreateDirectory(output);
@@ -112,6 +196,7 @@ namespace NaiwaCompanion
             using (Font heading = new Font("Microsoft YaHei UI", 13))
             using (Font title = new Font("Microsoft YaHei UI", 22, FontStyle.Bold))
             {
+                if (theme.Recorded) { RenderRecorded(theme, output); return; }
                 page.Clear(Color.FromArgb(246, 244, 235)); page.DrawString("奶蛙陪伴 · 眼神与互动预览", title, Brushes.DarkOliveGreen, 30, 18);
                 string[] labels = { "看向左上", "看向右下", "移到身上：回正", "自然眨眼", "戳肚子", "拖动倾斜", "捧腹大笑", "笑倒休息" };
                 for (int i = 0; i < 8; i++)
@@ -130,6 +215,25 @@ namespace NaiwaCompanion
                         int x = 20 + (i % 4) * 238, y = 70 + (i / 4) * 270;
                         page.DrawImageUnscaled(frame, x + 15, y); page.DrawString(labels[i], heading, Brushes.DarkOliveGreen, x + 3, y + 242);
                     }
+                }
+                sheet.Save(Path.Combine(output, "preview.png"), ImageFormat.Png);
+            }
+        }
+        private static void RenderRecorded(Theme theme, string output)
+        {
+            int count = theme.Manifest.actions.Length + 1;
+            using (Bitmap sheet = new Bitmap(260 * count, 390))
+            using (Graphics g = Graphics.FromImage(sheet))
+            using (Font font = new Font("Microsoft YaHei UI", 13))
+            {
+                g.Clear(Color.FromArgb(39, 43, 49)); g.DrawString(theme.Name + " · 动作预览", font, Brushes.White, 16, 10);
+                for (int i = 0; i < count; i++)
+                {
+                    Animation a = new Animation(); string label = "待机 / 眼神跟随";
+                    if (i > 0) { RecordedAction action = theme.Manifest.actions[i - 1]; theme.SelectAction(action.id); a.LaughAt = 0; a.Time = theme.Duration * .5; label = action.name; }
+                    using (Bitmap image = Painter.Render(theme, a, 65))
+                    { image.Save(Path.Combine(output, "theme-state-" + i + ".png"), ImageFormat.Png); g.DrawImageUnscaled(image, 260 * i + 5, 50); }
+                    g.DrawString(label, font, Brushes.White, 260 * i + 12, 350);
                 }
                 sheet.Save(Path.Combine(output, "preview.png"), ImageFormat.Png);
             }
