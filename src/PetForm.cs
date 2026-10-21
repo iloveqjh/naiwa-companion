@@ -25,6 +25,7 @@ namespace NaiwaCompanion
         private double lastMoveAt, checkAt, fullscreenSince;
         private double repeatAt = -1;
         private bool hidden, fullscreenCandidate, menuOpen, ready;
+        private bool headCandidate, headPressGesture;
         private string lastFrame = "";
         internal readonly CrawlMotion Crawl = new CrawlMotion();
         internal bool HiddenByFullscreen { get { return hidden; } }
@@ -57,7 +58,7 @@ namespace NaiwaCompanion
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == Desktop.WakeMessage) { Home(); if (!hidden) { Show(); Render(true); } Save(); return; }
-            if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0)); return; }
+            if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0) | (Animation.Head.Held ? 8 : 0) | (Animation.Head.Active ? 16 : 0)); return; }
             if (m.Msg == 0x21) { m.Result = (IntPtr)3; return; }
             if (m.Msg == 0x84 && ready && !pointer.Held)
             {
@@ -69,6 +70,22 @@ namespace NaiwaCompanion
         }
         internal bool Hit(Point p)
         { return alphaPixels != null && p.X >= 0 && p.Y >= 0 && p.X < Width && p.Y < Height && alphaPixels[(p.Y * Width + p.X) * 4 + 3] > 28; }
+        internal bool HitHead(Point p)
+        {
+            if (!Hit(p) || Animation.Laughing || Animation.Resting || Animation.Dragging) return false;
+            float x = p.X * 100f / prefs.Size, y = p.Y * 100f / prefs.Size;
+            if (Animation.Head.Active)
+            {
+                double sy = Math.Max(.70, Math.Min(1.10, 1 - Animation.Head.Amount));
+                Rectangle body = theme.BodyBounds;
+                double radius = Math.Max(theme.Width * .5 - body.Left, body.Right - theme.Width * .5);
+                double sx = Math.Min(1 / Math.Sqrt(sy), Math.Max(1, (theme.Width * .5 - 3) / Math.Max(1, radius)));
+                x = (float)(theme.Width * .5 + (x - theme.Width * .5) / sx);
+                y = (float)(body.Bottom - 1 + (y - body.Bottom + 1) / sy);
+            }
+            if (theme.CanCrawl && Animation.FacingLeft) x = theme.Width - x;
+            return theme.HeadRegion.Contains(x, y);
+        }
         private double Now { get { return clock.Elapsed.TotalSeconds; } }
 
         private void Tick()
@@ -96,7 +113,7 @@ namespace NaiwaCompanion
                 if (theme.ReturnsToIdle) Animation.Stand(now);
                 if (prefs.RepeatAction && !theme.CanCrawl) repeatAt = now + .85;
             }
-            Animation.Crawling = theme.CanCrawl && prefs.CrawlEnabled;
+            Animation.Crawling = theme.CanCrawl && prefs.CrawlEnabled && !Animation.Head.Active;
             if (theme.CanCrawl)
             {
                 bool paused = !Animation.Crawling || Animation.Laughing || Animation.StandAt >= 0 || Animation.Dragging || pointer.Held || menuOpen || prefs.Ephemeral;
@@ -114,6 +131,7 @@ namespace NaiwaCompanion
         {
             if (hidden == value) return;
             hidden = value; bool resting = Animation.Resting;
+            headCandidate = headPressGesture = false;
             repeatAt = -1;
             Animation.Crawling = false; Crawl.Reset(Location);
             Animation.Stop(Now); Animation.Resting = resting;
@@ -126,7 +144,7 @@ namespace NaiwaCompanion
             if (!IsHandleCreated || hidden || IsDisposed) return;
             string key = prefs.Size + "/" + theme.ActionName + "/" + (Animation.Resting ? "rest" : Animation.Laughing ? "laugh" + (int)(Animation.LaughTime * theme.Fps) : Animation.Blinking ? "blink" + (int)((Animation.Time - Animation.BlinkAt) * theme.BlinkFps) : "eye" + Math.Round(Animation.GazeX * 30) + "," + Math.Round(Animation.GazeY * 30));
             if (theme.CanCrawl) key += "/crawl/" + Animation.Crawling + "/" + Animation.FacingLeft + "/" + (int)(Animation.CrawlTime * 30) + "/" + Left + "/" + Top;
-            if (Animation.PokeAt >= 0 || Animation.DropAt >= 0 || Animation.StandAt >= 0 || Animation.Dragging || Math.Abs(Animation.Tilt) > .01) key += "/" + (int)(Now * 60);
+            if (Animation.Head.Active || Animation.PokeAt >= 0 || Animation.DropAt >= 0 || Animation.StandAt >= 0 || Animation.Dragging || Math.Abs(Animation.Tilt) > .01) key += "/" + (int)(Now * 60);
             if (!force && key == lastFrame) return;
             using (Bitmap image = Painter.Render(theme, Animation, prefs.Size))
             { alphaPixels = Painter.ReadPixels(image); Desktop.Present(Handle, image, Location); }
@@ -150,6 +168,8 @@ namespace NaiwaCompanion
         private void StopLaugh() { repeatAt = -1; Animation.Stop(Now); if (audio != null) audio.Stop(); Render(true); }
         internal void PlayAction(string id)
         { StopLaugh(); theme.SelectAction(id); Laugh(); }
+        internal void DemoHeadPress()
+        { repeatAt = -1; if (audio != null) audio.Stop(); Animation.DemoHeadPress(Now); timer.Interval = 16; Render(true); }
         private void ToggleCrawl()
         { prefs.CrawlEnabled = !prefs.CrawlEnabled; StopLaugh(); Animation.Crawling = prefs.CrawlEnabled; Crawl.Reset(Location); Save(); }
         private ToolStripMenuItem Item(string label, EventHandler action, bool selected)
@@ -157,9 +177,10 @@ namespace NaiwaCompanion
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.2 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.3 · " + theme.Name, null, false).Enabled = false;
             BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
+            Item("按头回弹（演示）", delegate { DemoHeadPress(); }, false);
             Item(theme.ActionName + "（双击）", delegate { Laugh(); }, false);
             if (theme.Recorded)
             {
@@ -270,13 +291,29 @@ namespace NaiwaCompanion
             base.OnMouseDown(e);
             if (e.Button == MouseButtons.Right) { pointer.Cancel(); Capture = false; menu.Show(this, e.Location); return; }
             if (e.Button != MouseButtons.Left) return;
+            headPressGesture = false;
+            headCandidate = HitHead(e.Location);
             pointer.Down(PointToScreen(e.Location)); dragOrigin = Location; lastPointer = pointer.Origin; lastMoveAt = Now; Capture = true;
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e); if (!pointer.Held) return;
             Point p = PointToScreen(e.Location); pointer.Move(p);
+            if (headPressGesture && Animation.Head.Held)
+            { Animation.Head.Pull(p.Y - pointer.Origin.Y, theme.BodyBounds.Height * prefs.Size / 100.0); return; }
+            if (headCandidate && HeadPressMotion.DownwardGesture(pointer.Origin, p))
+            {
+                if (Animation.BeginHeadPress(Now))
+                {
+                    headPressGesture = true;
+                    timer.Interval = 16;
+                    repeatAt = -1; if (audio != null) audio.Stop();
+                    Animation.Head.Pull(p.Y - pointer.Origin.Y, theme.BodyBounds.Height * prefs.Size / 100.0);
+                    Render(true); return;
+                }
+            }
             if (!pointer.Moved) return;
+            headCandidate = false;
             if (!Animation.Dragging) { repeatAt = -1; Animation.BeginDrag(Now); if (audio != null) audio.Stop(); }
             Animation.DragVelocity(Now, p.X - lastPointer.X, Now - lastMoveAt); lastMoveAt = Now; lastPointer = p;
             Location = new Point(dragOrigin.X + p.X - pointer.Origin.X, dragOrigin.Y + p.Y - pointer.Origin.Y); Render(true);
@@ -284,6 +321,13 @@ namespace NaiwaCompanion
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e); if (e.Button != MouseButtons.Left || !pointer.Held) return;
+            headCandidate = false;
+            if (headPressGesture && Animation.Head.Held)
+            {
+                headPressGesture = false;
+                Animation.Head.Advance(Now); Animation.Head.Release(Now); pointer.Cancel(); Capture = false;
+                Crawl.Reset(Location); Render(true); return;
+            }
             bool moved = pointer.Moved;
             bool twice = pointer.Up(PointToScreen(e.Location), Now, SystemInformation.DoubleClickTime, SystemInformation.DoubleClickSize); Capture = false;
             if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); Save(); }
@@ -294,7 +338,16 @@ namespace NaiwaCompanion
             Render(true);
         }
         protected override void OnMouseCaptureChanged(EventArgs e)
-        { base.OnMouseCaptureChanged(e); if (!Capture && pointer.Held) { pointer.Cancel(); Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); Render(true); Save(); } }
+        {
+            base.OnMouseCaptureChanged(e);
+            if (!Capture && pointer.Held)
+            {
+                headCandidate = false; pointer.Cancel();
+                if (headPressGesture && Animation.Head.Held) Animation.Head.Release(Now); else Animation.Release(Now);
+                headPressGesture = false;
+                Location = Clamp(Location, Size); Crawl.Reset(Location); Render(true); Save();
+            }
+        }
         private void RefreshIcon()
         {
             Icon previous = petIcon;

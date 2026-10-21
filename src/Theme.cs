@@ -23,6 +23,29 @@ namespace NaiwaCompanion
         internal string ActionName { get { return Recorded ? SelectedAction.name : "捧腹大笑"; } }
         internal bool ReturnsToIdle { get { return Recorded && SelectedAction.endPose == "idle"; } }
         internal RectangleF? Belly { get { return Recorded && Manifest.belly != null ? (RectangleF?)Manifest.belly.Rectangle : null; } }
+        internal RectangleF[] EyeRegions
+        {
+            get
+            {
+                if (!Recorded) return new RectangleF[] { new RectangleF(Width * .402f, Height * .161f, Width * .058f, Height * .048f) };
+                if (Manifest.eyes == null) return new RectangleF[0];
+                RectangleF[] result = new RectangleF[Manifest.eyes.Length];
+                for (int n = 0; n < result.Length; n++) result[n] = Manifest.eyes[n].Rectangle;
+                return result;
+            }
+        }
+        internal RectangleF HeadRegion
+        {
+            get
+            {
+                RectangleF[] eyes = EyeRegions;
+                if (eyes.Length == 0) return RectangleF.Empty;
+                RectangleF bounds = eyes[0];
+                for (int n = 1; n < eyes.Length; n++) bounds = RectangleF.Union(bounds, eyes[n]);
+                bounds.Inflate(Width * .055f, Height * .065f);
+                return bounds;
+            }
+        }
         internal PointF? GazeOrigin(int scale)
         {
             if (!Recorded || Manifest.eyes == null || Manifest.eyes.Length == 0) return null;
@@ -34,6 +57,19 @@ namespace NaiwaCompanion
         internal double Duration { get { return Frames / Fps; } }
         private ZipArchive archive;
         private Bitmap idle;
+        private Rectangle bodyBounds;
+        internal Rectangle BodyBounds
+        {
+            get
+            {
+                if (bodyBounds.Width > 0) return bodyBounds;
+                byte[] pixels = Painter.ReadPixels(idle); int left = Width, top = Height, right = 0, bottom = 0;
+                for (int y = 0; y < Height; y++) for (int x = 0; x < Width; x++) if (pixels[(y * Width + x) * 4 + 3] > 28)
+                { left = Math.Min(left, x); top = Math.Min(top, y); right = Math.Max(right, x + 1); bottom = Math.Max(bottom, y + 1); }
+                bodyBounds = right > left ? Rectangle.FromLTRB(left, top, right, bottom) : new Rectangle(0, 0, Width, Height);
+                return bodyBounds;
+            }
+        }
         private readonly Dictionary<string, Bitmap> images = new Dictionary<string, Bitmap>();
         private readonly Queue<string> fifo = new Queue<string>();
         internal int CacheCount { get { return images.Count; } }

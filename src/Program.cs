@@ -31,7 +31,7 @@ namespace NaiwaCompanion
                 {
                     IntPtr found = Desktop.FindWindow(null, Desktop.WindowName); Desktop.Box box; Desktop.GetWindowRect(found, out box);
                     int state = found == IntPtr.Zero ? 0 : Desktop.SendMessage(found, Desktop.StatusMessage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0), Encoding.UTF8); return;
+                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0) + "\nHeadHeld=" + ((state & 8) != 0) + "\nHeadActive=" + ((state & 16) != 0), Encoding.UTF8); return;
                 }
                 if (Array.IndexOf(args, "--quit") >= 0) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), 0x10, IntPtr.Zero, IntPtr.Zero); return; }
                 Preferences prefs = Preferences.Load(); string folder = Argument(args, "--assets");
@@ -40,6 +40,8 @@ namespace NaiwaCompanion
                 if (output != null) { Environment.ExitCode = SelfTests.Run(folder, output); return; }
                 output = Argument(args, "--render");
                 if (output != null) { SelfTests.Render(folder, output); return; }
+                output = Argument(args, "--render-press");
+                if (output != null) { SelfTests.RenderHeadPress(folder, output); return; }
                 bool first;
                 using (Mutex single = new Mutex(true, "Local\\NaiwaCompanion.1", out first))
                 {
@@ -64,6 +66,7 @@ namespace NaiwaCompanion
                     {
                         string action = Value(args, "--play");
                         if (action != null) pet.Shown += delegate { pet.PlayAction(action); };
+                        if (Array.IndexOf(args, "--press-demo") >= 0) pet.Shown += delegate { pet.DemoHeadPress(); };
                         Application.Run(pet);
                     }
                 }

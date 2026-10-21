@@ -28,6 +28,7 @@
 | 眼球跟随、回正、平滑速度 | `src/Animation.cs`：`GazeTarget`、`Advance` |
 | 眼球移动幅度、原图局部变形 | `src/Painter.cs`：`Warp` |
 | 戳肚子、拖动回弹、动作时长 | `src/Animation.cs` 与 `src/Painter.cs` |
+| 按头下压、弹性与幽怨表情 | `src/HeadPressMotion.cs`、`src/PetForm.cs` 手势、`src/Painter.cs` 整身变形与眼睑 |
 | 菜单、声音、全屏、导入素材 | `src/PetForm.cs` |
 | 素材解码、缓存、包格式 | `src/Theme.cs` |
 | 多主题、动作清单、眼部与肚腹校准 | `src/ThemeManifest.cs`、`docs/主题与动作.md` |
@@ -39,6 +40,8 @@
 | 回归测试和预览图 | `src/SelfTests.cs` |
 
 修改后执行 `scripts/Build.ps1` 和 `--self-test`。涉及眼部或画面变化时，执行 `--render` 查看前后效果，尤其检查眼部以外是否被误改、拖动是否稳定、动画结束是否正确。
+
+按头动作可用 `--assets "素材目录" --render-press "输出目录"` 导出 240 张 60 fps 实际渲染帧，或 `--press-demo` 启动后演示。按压先判定可见头部，再区分向下按压与横拉、上提拖动；全屏隐藏会清除捕获和按压状态。
 
 个人录屏主题包放入 `themes/名称/theme.nct`，通过右键菜单切换；主题帧不上传到公开仓库。程序正常使用始终显示实际角色素材，内置测试图形仅供离线测试代码使用。
 

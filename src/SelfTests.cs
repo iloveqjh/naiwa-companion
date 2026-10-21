@@ -24,8 +24,10 @@ namespace NaiwaCompanion
             {
                 TestCrawlMotion();
                 TestPalette();
+                TestHeadMotion();
                 using (Theme theme = new Theme(assets))
                 {
+                    TestHeadVisual(theme, output);
                     if (theme.Recorded)
                     {
                         TestRecorded(theme, output);
@@ -84,6 +86,7 @@ namespace NaiwaCompanion
                     using (Theme demo = new Theme(null)) using (PetForm form = new PetForm(demo, temp))
                     {
                         form.Location = new Point(-20000, -20000); form.Show(); Application.DoEvents(); form.Render(true);
+                        TestHeadInput(form, demo, 85);
                         Check(Desktop.IsWindowVisible(form.Handle), "native transparent window starts");
                         int style = Desktop.GetWindowLong(form.Handle, -20);
                         Check((style & 0x80000) != 0 && (style & 0x08000000) != 0, "layered window does not take keyboard focus");
@@ -111,6 +114,137 @@ namespace NaiwaCompanion
             catch (Exception e) { log.Add(e.ToString()); log.Add("RESULT FAIL"); File.WriteAllLines(Path.Combine(output, "results.txt"), log, new UTF8Encoding(false)); return 1; }
         }
         private static void CheckRegion(bool ok) { if (!ok) throw new Exception("belly warp changed protected face or feet"); }
+        private static void TestHeadMotion()
+        {
+            Point start = new Point(100, 100);
+            Check(HeadPressMotion.DownwardGesture(start, new Point(102, 114)) && !HeadPressMotion.DownwardGesture(start, new Point(120, 102)) && !HeadPressMotion.DownwardGesture(start, new Point(100, 70)), "head downward pressure stays distinct from sideways or upward dragging");
+            HeadPressMotion head = new HeadPressMotion(); head.Begin(0); head.Pull(100, 300);
+            for (int n = 1; n <= 72; n++) head.Advance(n / 120.0);
+            Check(head.Amount > .22 && head.Amount < .28, "held head compresses smoothly within a bounded range");
+            double held = head.Amount; head.Release(.6);
+            Check(head.Amount == held && !head.Held, "release preserves position without snapping to rest");
+            double min = 0, secondary = 0, reaction = 0; bool crossed = false;
+            for (int n = 1; n <= 240; n++)
+            {
+                head.Advance(.6 + n / 120.0); min = Math.Min(min, head.Amount);
+                if (head.Amount < 0) crossed = true;
+                if (crossed) secondary = Math.Max(secondary, head.Amount);
+                reaction = Math.Max(reaction, head.Reproach);
+            }
+            Check(min < -.035 && min > -.09 && secondary > .006, "release gives a stretch overshoot and smaller second squash");
+            Check(reaction > .99 && !head.Active && Math.Abs(head.Amount) < .0001, "short reproach follows rebound and all motion settles");
+            head.Begin(3); head.Pull(1000000, 300); for (int n = 1; n <= 120; n++) head.Advance(3 + n / 120.0);
+            Check(head.Amount <= .281 && head.Amount > .27, "extreme pointer travel cannot flatten the character indefinitely");
+            head.Begin(4); Check(head.Amount > .27, "repeated head press keeps current deformation continuous");
+            head.Cancel(); Check(!head.Active && head.Amount == 0 && head.Velocity == 0, "fullscreen or interrupted interaction clears pressure completely");
+            Animation state = new Animation(); state.BeginHeadPress(0); state.Head.Pull(80, 300);
+            for (int n = 0; n <= 180; n++) state.Advance(n / 60.0, PointF.Empty, 3, .24);
+            Check(!state.Blinking && state.Head.Held && !state.Poke(3, new PointF(144, 210), new Size(288, 368)), "head pressure excludes blinking and belly deformation");
+            state.BeginDrag(3.1); Check(!state.Head.Active && state.Dragging, "normal drag cancels prior head reaction");
+            double[] amount = new double[3]; int[] rates = { 30, 60, 120 };
+            for (int k = 0; k < rates.Length; k++)
+            {
+                HeadPressMotion sampled = new HeadPressMotion(); sampled.Begin(0); sampled.Pull(90, 300);
+                for (int n = 1; n <= rates[k] / 2; n++) sampled.Advance(n / (double)rates[k]);
+                sampled.Release(.5); for (int n = 1; n <= rates[k] / 5; n++) sampled.Advance(.5 + n / (double)rates[k]);
+                amount[k] = sampled.Amount;
+            }
+            Check(Math.Abs(amount[0] - amount[2]) < .004 && Math.Abs(amount[1] - amount[2]) < .004, "pressure rebound remains consistent at 30, 60 and 120 updates per second");
+        }
+        private static Rectangle AlphaBounds(Bitmap image)
+        {
+            byte[] pixels = Painter.ReadPixels(image); int left = image.Width, right = 0, top = image.Height, bottom = 0;
+            for (int y = 0; y < image.Height; y++) for (int x = 0; x < image.Width; x++) if (pixels[(y * image.Width + x) * 4 + 3] > 28)
+            { left = Math.Min(left, x); right = Math.Max(right, x + 1); top = Math.Min(top, y); bottom = Math.Max(bottom, y + 1); }
+            return Rectangle.FromLTRB(left, top, right, bottom);
+        }
+        private static void TestHeadInput(PetForm form, Theme theme, int percent)
+        {
+            RectangleF region = theme.HeadRegion; Point point = Point.Empty; bool found = false;
+            for (int y = Math.Max(0, (int)region.Top); y < region.Bottom && !found; y++)
+            for (int x = Math.Max(0, (int)region.Left); x < region.Right && !found; x++)
+            {
+                Point p = new Point(x * percent / 100, y * percent / 100);
+                if (form.HitHead(p)) { point = p; found = true; }
+            }
+            Check(found && !form.HitHead(Point.Empty), "native head hit test requires visible calibrated head pixels");
+            Point original = form.Location;
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.MethodInfo down = typeof(PetForm).GetMethod("OnMouseDown", flags), move = typeof(PetForm).GetMethod("OnMouseMove", flags), up = typeof(PetForm).GetMethod("OnMouseUp", flags);
+            down.Invoke(form, new object[] { new MouseEventArgs(MouseButtons.Left, 1, point.X, point.Y, 0) });
+            move.Invoke(form, new object[] { new MouseEventArgs(MouseButtons.Left, 0, point.X + 1, point.Y + 60, 0) });
+            Check(form.Animation.Head.Held && !form.Animation.Dragging && form.Location == original, "native downward head gesture compresses without moving the window");
+            up.Invoke(form, new object[] { new MouseEventArgs(MouseButtons.Left, 1, point.X + 1, point.Y + 60, 0) });
+            Check(!form.Animation.Head.Held && !form.Animation.Dragging && form.Location == original, "native release clears capture without a drag or double-click action");
+            form.DemoHeadPress(); Check(form.Animation.Head.Held, "menu demonstration starts the same pressure model");
+            form.SetHidden(true); Check(!form.Animation.Head.Active, "fullscreen interruption clears held pressure and reaction");
+            form.SetHidden(false);
+        }
+        private static void TestHeadVisual(Theme theme, string output)
+        {
+            Animation a = new Animation(); a.BeginHeadPress(0); a.Head.Pull(100, theme.BodyBounds.Height);
+            Step(a, 0, .6, PointF.Empty, theme);
+            using (Bitmap normal = Painter.Render(theme, new Animation(), 100))
+            using (Bitmap pressed = Painter.Render(theme, a, 100))
+            {
+                Rectangle before = AlphaBounds(normal), after = AlphaBounds(pressed);
+                Check(after.Height < before.Height * .85 && Math.Abs(after.Bottom - before.Bottom) <= 2, "whole-body pressure visibly squashes height while feet remain anchored");
+                Check(after.Left >= 2 && after.Right <= pressed.Width - 1, "pressure keeps the expanded body inside its transparent canvas");
+                pressed.Save(Path.Combine(output, "head-pressed.png"));
+            }
+            foreach (RectangleF eye in theme.EyeRegions)
+            using (Bitmap lid = Painter.LowerEyelid(theme.Idle, eye, 1))
+            {
+                byte[] before = Painter.ReadPixels(theme.Idle), after = Painter.ReadPixels(lid);
+                for (int y = 0; y < theme.Height; y++) for (int x = 0; x < theme.Width; x++)
+                {
+                    int p = (y * theme.Width + x) * 4;
+                    if (before[p + 3] != after[p + 3]) throw new Exception("eyelid changed alpha");
+                    bool inside = x >= Math.Floor(eye.Left) && x <= Math.Ceiling(eye.Right) && y >= Math.Floor(eye.Top) && y <= Math.Ceiling(eye.Bottom);
+                    if (!inside) for (int c = 0; c < 3; c++) if (before[p + c] != after[p + c]) throw new Exception("eyelid modified body outside iris");
+                }
+            }
+            Check(true, "reproach eyelids preserve alpha and all pixels outside calibrated eyes");
+        }
+        internal static void RenderHeadPress(string assets, string output)
+        {
+            Directory.CreateDirectory(output);
+            using (Theme theme = new Theme(assets))
+            using (Font font = new Font("Microsoft YaHei UI", 18))
+            using (Font small = new Font("Microsoft YaHei UI", 12))
+            {
+                Animation a = new Animation();
+                for (int frame = 0; frame < 240; frame++)
+                {
+                    double t = frame / 60.0;
+                    if (frame == 27) a.BeginHeadPress(t);
+                    if (a.Head.Held) { double u = Math.Min(1, (t - .45) / .35); a.Head.Pull(100 * u * u * (3 - 2 * u), theme.BodyBounds.Height); }
+                    if (frame == 75) a.Head.Release(t);
+                    a.Advance(t, PointF.Empty, theme.Duration, .24, false);
+                    using (Bitmap pet = Painter.Render(theme, a, 110))
+                    using (Bitmap page = new Bitmap(720, 560))
+                    using (Graphics g = Graphics.FromImage(page))
+                    {
+                        g.Clear(Color.FromArgb(239, 244, 247));
+                        string stage = t < .45 ? "按住头部，向下压" : t < 1.25 ? "身体压扁，向两侧鼓起" : a.Head.Reproach > .1 ? "弹回来，再幽怨地看你一眼" : t < 2.2 ? "松手：回弹、回摆、停稳" : "恢复安静陪伴";
+                        g.DrawString(stage, font, Brushes.DarkSlateGray, 28, 20);
+                        g.DrawString(theme.Name + " · 程序实际渲染 · 60 帧/秒", small, Brushes.SlateGray, 28, 61);
+                        int px = (page.Width - pet.Width) / 2, py = 485 - (int)Math.Round((theme.BodyBounds.Bottom - 1) * 1.1);
+                        g.DrawImageUnscaled(pet, px, py);
+                        if (a.Head.Held)
+                        {
+                            RectangleF head = theme.HeadRegion;
+                            float hx = px + (head.X + head.Width / 2) * 1.1f;
+                            float foot = (theme.BodyBounds.Bottom - 1) * 1.1f;
+                            float hy = py + foot + (head.Top * 1.1f - foot) * (float)(1 - a.Head.Amount) - 9;
+                            using (Pen pen = new Pen(Color.FromArgb(205, 230, 143, 82), 3)) g.DrawEllipse(pen, hx - 9, hy - 9, 18, 18);
+                        }
+                        page.Save(Path.Combine(output, frame.ToString("0000") + ".png"), ImageFormat.Png);
+                        if (frame == 0 || frame == 72 || frame == 88 || frame == 115) pet.Save(Path.Combine(output, "pose-" + frame + ".png"), ImageFormat.Png);
+                    }
+                }
+            }
+        }
         private static void TestCrawlMotion()
         {
             CrawlMotion crawl = new CrawlMotion(); Rectangle area = new Rectangle(-1600, -200, 1600, 1000); Size size = new Size(300, 380);
@@ -219,6 +353,7 @@ namespace NaiwaCompanion
             using (Theme another = new Theme(theme.Folder)) using (PetForm form = new PetForm(another, prefs))
             {
                 form.Location = new Point(-20000, -20000); form.Show(); Application.DoEvents();
+                TestHeadInput(form, another, 85);
                 form.PlayAction(first); Check(form.Animation.Laughing || (theme.CanCrawl && form.Animation.Crawling), "recorded menu action starts native playback");
                 form.SetHidden(true); Check(!form.Animation.Laughing && !form.Animation.Crawling, "recorded playback stops when hidden");
                 form.SetHidden(false); form.Close();

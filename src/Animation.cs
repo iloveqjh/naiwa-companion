@@ -12,12 +12,13 @@ namespace NaiwaCompanion
         internal bool Resting, Dragging;
         internal bool Crawling, FacingLeft;
         internal double CrawlTime;
+        internal readonly HeadPressMotion Head = new HeadPressMotion();
         private double lastTime = -1, nextBlink = 4.5, tiltSpeed, desiredTilt, lastDrag;
         private readonly Random random = new Random(3721);
         internal bool Laughing { get { return LaughAt >= 0; } }
         internal bool Blinking { get { return BlinkAt >= 0; } }
         internal double LaughTime { get { return Math.Max(0, Time - LaughAt); } }
-        internal bool Active { get { return Laughing || Blinking || Dragging || PokeAt >= 0 || DropAt >= 0 || StandAt >= 0 || Math.Abs(Tilt) > .01; } }
+        internal bool Active { get { return Head.Active || Laughing || Blinking || Dragging || PokeAt >= 0 || DropAt >= 0 || StandAt >= 0 || Math.Abs(Tilt) > .01; } }
 
         internal static PointF GazeTarget(PointF pointer, SizeF size, bool onBody, bool enabled, PointF? origin = null)
         {
@@ -33,6 +34,12 @@ namespace NaiwaCompanion
         {
             double dt = lastTime < 0 ? 0 : Math.Max(0, Math.Min(.08, now - lastTime));
             lastTime = now; Time = now;
+            Head.Advance(now);
+            if (Head.Reproach > 0)
+            {
+                target.X = (float)(target.X * (1 - Head.Reproach) + .38 * Head.Reproach);
+                target.Y = (float)(target.Y * (1 - Head.Reproach) - .72 * Head.Reproach);
+            }
             double ease = 1 - Math.Exp(-dt * 12);
             GazeX += (target.X - GazeX) * ease; GazeY += (target.Y - GazeY) * ease;
             if (Laughing && LaughTime >= clipLength) { LaughAt = -1; Resting = true; }
@@ -40,7 +47,7 @@ namespace NaiwaCompanion
             if (PokeAt >= 0 && now - PokeAt > 1.05) PokeAt = -1;
             if (DropAt >= 0 && now - DropAt > .85) DropAt = -1;
             if (StandAt >= 0 && now - StandAt > .26) StandAt = -1;
-            if (allowBlink && !Laughing && !Resting && !Dragging && PokeAt < 0 && DropAt < 0 && StandAt < 0 && !Blinking && now >= nextBlink) BlinkAt = now;
+            if (allowBlink && !Head.Active && !Laughing && !Resting && !Dragging && PokeAt < 0 && DropAt < 0 && StandAt < 0 && !Blinking && now >= nextBlink) BlinkAt = now;
             if (!Dragging || now - lastDrag > .09) desiredTilt = 0;
             int parts = Math.Max(1, (int)Math.Ceiling(dt / .006));
             for (int i = 0; i < parts; i++)
@@ -57,15 +64,23 @@ namespace NaiwaCompanion
         internal bool StartLaugh(double now)
         {
             if (Laughing) return false;
+            Head.Cancel();
             Time = now; ClearSmall(); Resting = Dragging = false; LaughAt = now; return true;
         }
-        internal void Stop(double now) { Time = now; LaughAt = -1; Resting = Dragging = false; ClearSmall(); }
+        internal void Stop(double now) { Head.Cancel(); Time = now; LaughAt = -1; Resting = Dragging = false; ClearSmall(); }
+        internal bool BeginHeadPress(double now)
+        {
+            if (Laughing || Resting || Dragging) return false;
+            Time = now; ClearSmall(); Head.Begin(now); return true;
+        }
+        internal void DemoHeadPress(double now)
+        { Stop(now); Head.Demo(now); }
         internal void Stand(double now) { Stop(now); StandAt = now; }
         internal bool Poke(double now, PointF p, Size size, RectangleF? area = null)
         {
             RectangleF belly = area ?? new RectangleF(size.Width * .255f, size.Height * .38f, size.Width * .49f, size.Height * .38f);
             double x = (p.X - belly.X - belly.Width / 2) / (belly.Width / 2), y = (p.Y - belly.Y - belly.Height / 2) / (belly.Height / 2);
-            if (x * x + y * y > 1 || Laughing || Resting || Dragging) return false;
+            if (x * x + y * y > 1 || Head.Active || Laughing || Resting || Dragging) return false;
             Time = now; ClearSmall(); PokeAt = now; return true;
         }
         internal void BeginDrag(double now) { Stop(now); Dragging = true; lastDrag = now; }

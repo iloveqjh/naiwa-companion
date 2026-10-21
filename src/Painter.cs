@@ -28,7 +28,7 @@ namespace NaiwaCompanion
                     scene.Dispose(); scene = lying;
                 }
             }
-            else if (state.Crawling && theme.CanCrawl && !state.Laughing && !state.Dragging && state.StandAt < 0) scene = (Bitmap)theme.Crawl(state.CrawlTime).Clone();
+            else if (state.Crawling && !state.Head.Active && theme.CanCrawl && !state.Laughing && !state.Dragging && state.StandAt < 0) scene = (Bitmap)theme.Crawl(state.CrawlTime).Clone();
             else if (state.Resting) scene = (Bitmap)theme.Laugh(theme.Frames - 1).Clone();
             else if (state.StandAt >= 0)
             {
@@ -56,6 +56,11 @@ namespace NaiwaCompanion
             }
             else scene = Warp(theme.Idle, true, state.GazeX, state.GazeY, 0);
 
+            if (state.Head.Reproach > 0 && theme.Original && !state.Laughing && !state.Resting)
+            {
+                foreach (RectangleF eye in theme.EyeRegions)
+                { Bitmap next = LowerEyelid(scene, eye, state.Head.Reproach); scene.Dispose(); scene = next; }
+            }
             if (theme.CanCrawl && state.FacingLeft) scene.RotateFlip(RotateFlipType.RotateNoneFlipX);
             if (state.PokeAt >= 0 && !state.Crawling)
             {
@@ -67,6 +72,7 @@ namespace NaiwaCompanion
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 float cx = width * .5f, foot = height * (state.Dragging ? .56f : .956f);
+                if (state.Head.Active) foot = (theme.BodyBounds.Bottom - 1) * percent / 100f;
                 g.TranslateTransform(cx, foot); g.RotateTransform((float)state.Tilt);
                 if (!theme.Original && state.Laughing)
                 {
@@ -76,6 +82,15 @@ namespace NaiwaCompanion
                 }
                 float squash = (float)state.DropAmount;
                 g.ScaleTransform(state.Dragging ? 1.006f : 1 + squash, state.Dragging ? 1.014f : 1 - squash);
+                if (state.Head.Active)
+                {
+                    float sy = (float)Math.Max(.70, Math.Min(1.10, 1 - state.Head.Amount));
+                    float sx = (float)(1 / Math.Sqrt(sy));
+                    Rectangle body = theme.BodyBounds;
+                    float radius = Math.Max(theme.Width * .5f - body.Left, body.Right - theme.Width * .5f);
+                    float fit = (theme.Width * .5f - 3) / Math.Max(1, radius);
+                    g.ScaleTransform(Math.Min(sx, Math.Max(1, fit)), sy);
+                }
                 g.TranslateTransform(-cx, -foot); g.DrawImage(scene, new Rectangle(0, 0, width, height));
             }
             scene.Dispose(); return result;
@@ -88,6 +103,34 @@ namespace NaiwaCompanion
                 ColorMatrix matrix = new ColorMatrix(); matrix.Matrix33 = Math.Min(1, opacity); attr.SetColorMatrix(matrix);
                 g.DrawImage(b, new Rectangle(0, 0, b.Width, b.Height), 0, 0, b.Width, b.Height, GraphicsUnit.Pixel, attr);
             }
+        }
+        // Move a tiny strip of the existing forehead texture over the iris; keep alpha untouched.
+        internal static Bitmap LowerEyelid(Bitmap input, RectangleF eye, double amount)
+        {
+            byte[] pixels = ReadPixels(input), output = (byte[])pixels.Clone();
+            int width = input.Width, height = input.Height;
+            int left = Math.Max(0, (int)Math.Floor(eye.Left)), right = Math.Min(width - 1, (int)Math.Ceiling(eye.Right));
+            int top = Math.Max(0, (int)Math.Floor(eye.Top)), bottom = Math.Min(height - 1, (int)Math.Ceiling(eye.Bottom));
+            double cx = eye.X + eye.Width / 2, rx = eye.Width / 2;
+            for (int x = left; x <= right; x++)
+            {
+                double q = (x - cx) / rx; if (Math.Abs(q) >= 1) continue;
+                double edge = eye.Top + eye.Height * .39 * amount * Math.Sqrt(1 - q * q);
+                int sampleY = Math.Max(0, (int)Math.Floor(eye.Top - Math.Max(3, eye.Height * .22)));
+                int source = (sampleY * width + x) * 4;
+                for (int y = top; y <= bottom; y++)
+                {
+                    double weight = Math.Max(0, Math.Min(1, (edge - y) / 1.2));
+                    int p = (y * width + x) * 4;
+                    if (weight <= 0 || pixels[source + 3] < 200) continue;
+                    for (int c = 0; c < 3; c++)
+                        output[p + c] = (byte)Math.Round(pixels[p + c] * (1 - weight) + pixels[source + c] * pixels[p + 3] / (double)pixels[source + 3] * weight);
+                }
+            }
+            Bitmap result = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+            BitmapData data = result.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try { Marshal.Copy(output, 0, data.Scan0, output.Length); } finally { result.UnlockBits(data); }
+            return result;
         }
         // Local inverse warping moves existing texture; no replacement face or eye is painted.
         internal static Bitmap Warp(Bitmap input, bool eye, double gazeX, double gazeY, double belly, RectangleF? region = null)
