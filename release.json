@@ -4,7 +4,7 @@
   "platform": "windows",
   "architecture": "anycpu",
   "downloadUrl": "https://github.com/iloveqjh/naiwa-companion/releases/download/v1.4.1/NaiwaCompanion-Windows-v1.4.1.zip",
-  "sha256": "5047E61AB2B975A84DA7C55E52A81ABAF558FCD486257075EA0C93C52A8C8F07",
+  "sha256": "A9104E0C09E39B5E27E2696E321846A63A2A7F324E5E6B69EEE752B8AFED2FF5",
   "entrypoint": "NaiwaCompanion.exe",
   "originalAssetsBundled": false,
   "originalAssetsManifest": "https://raw.githubusercontent.com/iloveqjh/naiwa-companion/main/assets-source.json",

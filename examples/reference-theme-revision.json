@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "revisionDate": "2026-10-22",
+  "programVersion": "1.4.1",
+  "assetsIncluded": false,
+  "description": "本机参考主题的最终参数，仅含元数据，不含角色帧或录屏原声。",
+  "taichiGazeHoldSeconds": 1.2,
+  "themes": {
+    "kungfu": {
+      "id": "kungfu",
+      "name": "太极奶蛙",
+      "width": 384,
+      "height": 448,
+      "headReactionAction": "press-reaction",
+      "headReactionSeamless": true,
+      "locomotionAction": null,
+      "crawlSpeed": null,
+      "colorGamma": 1,
+      "colorGreen": 1,
+      "colorBlue": 1,
+      "motionRevision": "crisp-classic-gaze-hold-1p2s-94frames",
+      "colorReference": "classic-yellow-20261022",
+      "actions": [
+        {
+          "id": "taichi",
+          "name": "太极推掌",
+          "frames": 352,
+          "fps": 30,
+          "prefix": "actions/taichi/",
+          "endPose": "idle",
+          "audio": "audio/taichi.wav"
+        },
+        {
+          "id": "greeting",
+          "name": "合掌致意",
+          "frames": 100,
+          "fps": 30,
+          "prefix": "actions/greeting/",
+          "endPose": "idle"
+        },
+        {
+          "id": "wave",
+          "name": "招手问好",
+          "frames": 364,
+          "fps": 30,
+          "prefix": "actions/wave/",
+          "endPose": "idle"
+        },
+        {
+          "id": "press-reaction",
+          "name": "经典站姿注视片刻，再回太极",
+          "prefix": "actions/press-reaction/",
+          "frames": 94,
+          "fps": 60,
+          "endPose": "idle"
+        }
+      ]
+    },
+    "angel": {
+      "id": "angel",
+      "name": "天使奶蛙",
+      "width": 384,
+      "height": 448,
+      "headReactionAction": "press-reaction",
+      "headReactionSeamless": true,
+      "locomotionAction": null,
+      "crawlSpeed": null,
+      "colorGamma": 1,
+      "colorGreen": 1,
+      "colorBlue": 1,
+      "motionRevision": "angel-hand-edge-and-full-palm-path-3",
+      "colorReference": "classic-yellow-20261022",
+      "actions": [
+        {
+          "id": "chant",
+          "name": "神圣吟唱",
+          "frames": 378,
+          "fps": 30,
+          "prefix": "actions/chant/",
+          "endPose": "idle",
+          "audio": "audio/chant.wav"
+        },
+        {
+          "id": "prayer",
+          "name": "合掌祈祷",
+          "frames": 127,
+          "fps": 30,
+          "prefix": "actions/prayer/",
+          "endPose": "idle",
+          "audio": "audio/prayer.wav"
+        },
+        {
+          "id": "press-reaction",
+          "name": "合掌祈祷，再复原",
+          "prefix": "actions/press-reaction/",
+          "endPose": "idle",
+          "frames": 115,
+          "fps": 60,
+          "audio": "audio/press-reaction.wav"
+        }
+      ]
+    },
+    "cuddle": {
+      "id": "cuddle",
+      "name": "爬爬奶蛙",
+      "width": 448,
+      "height": 448,
+      "headReactionAction": "press-reaction",
+      "headReactionSeamless": null,
+      "locomotionAction": "crawl",
+      "crawlSpeed": 84.177,
+      "colorGamma": 1,
+      "colorGreen": 1,
+      "colorBlue": 1,
+      "motionRevision": "full-forward-stride-60fps-20261021",
+      "colorReference": "classic-yellow-20261022",
+      "actions": [
+        {
+          "id": "crawl",
+          "name": "向前爬行",
+          "frames": 106,
+          "fps": 60,
+          "prefix": "actions/crawl/",
+          "endPose": "idle"
+        },
+        {
+          "id": "chuckle",
+          "name": "趴着偷笑",
+          "frames": 92,
+          "fps": 30,
+          "prefix": "actions/chuckle/",
+          "endPose": "idle",
+          "audio": "audio/chuckle.wav"
+        },
+        {
+          "id": "peek",
+          "name": "回头看看",
+          "frames": 36,
+          "fps": 30,
+          "prefix": "actions/peek/",
+          "endPose": "idle"
+        },
+        {
+          "id": "press-reaction",
+          "name": "回头看看，再趴着偷笑",
+          "prefix": "actions/press-reaction/",
+          "endPose": "idle",
+          "frames": 98,
+          "fps": 30,
+          "audio": "audio/press-reaction.wav"
+        }
+      ]
+    }
+  }
+}
