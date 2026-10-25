@@ -17,6 +17,8 @@ namespace NaiwaCompanion
         private readonly Timer timer = new Timer();
         private readonly ContextMenuStrip menu = new ContextMenuStrip();
         private readonly NotifyIcon tray = new NotifyIcon();
+        internal readonly TodoStore Todos;
+        internal TodoForm TodoPanel { get; private set; }
         private ActionSound audio, reactionAudio;
         private bool reactionSoundStarted;
         private Icon petIcon;
@@ -34,6 +36,7 @@ namespace NaiwaCompanion
         internal PetForm(Theme loaded, Preferences settings)
         {
             theme = loaded; prefs = settings;
+            Todos = new TodoStore(prefs.Ephemeral ? null : TodoStore.DefaultPath);
             Animation.Head.ReactionDuration = theme.ReactionDuration;
             Text = Desktop.WindowName; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None; TopMost = prefs.AlwaysOnTop;
@@ -51,7 +54,7 @@ namespace NaiwaCompanion
             tray.Icon = petIcon; tray.Text = "奶蛙陪伴 · 双击笑 / 拖动 / 右键设置"; tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { Home(); if (!hidden) { Show(); Render(true); } Save(); };
             timer.Interval = 16; timer.Tick += delegate { Tick(); };
-            Shown += delegate { ready = true; tray.Visible = !prefs.Ephemeral; Render(true); timer.Start(); if (theme.Recorded && prefs.RepeatAction && !theme.CanCrawl) repeatAt = Now + .6; };
+            Shown += delegate { ready = true; tray.Visible = !prefs.Ephemeral; Render(true); timer.Start(); if (theme.Recorded && prefs.RepeatAction && !theme.CanCrawl) repeatAt = Now + .6; if (!prefs.Ephemeral && Todos.View.PanelOpen) ShowTodos(false); };
             menu.Opening += delegate { menuOpen = true; BuildMenu(); };
             menu.Closed += delegate { menuOpen = false; };
         }
@@ -63,7 +66,8 @@ namespace NaiwaCompanion
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == Desktop.WakeMessage) { Home(); if (!hidden) { Show(); Render(true); } Save(); return; }
-            if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0) | (Animation.Head.Held ? 8 : 0) | (Animation.Head.Active ? 16 : 0) | (prefs.Sound ? 32 : 0) | (HasReactionSound ? 64 : 0)); return; }
+            if (m.Msg == Desktop.TodoMessage) { ShowTodos(true); return; }
+            if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0) | (Animation.Head.Held ? 8 : 0) | (Animation.Head.Active ? 16 : 0) | (prefs.Sound ? 32 : 0) | (HasReactionSound ? 64 : 0) | (TodoPanel != null && TodoPanel.Visible ? 128 : 0)); return; }
             if (m.Msg == 0x21) { m.Result = (IntPtr)3; return; }
             if (m.Msg == 0x84 && ready && !pointer.Held)
             {
@@ -147,6 +151,7 @@ namespace NaiwaCompanion
             Animation.Crawling = false; Crawl.Reset(Location);
             Animation.Stop(Now); Animation.Resting = resting;
             StopAudio(); pointer.Cancel(); Capture = false;
+            if (TodoPanel != null) TodoPanel.SetSuspended(value);
             if (value) { Hide(); timer.Interval = 150; }
             else { Show(); timer.Interval = 16; Render(true); }
         }
@@ -194,7 +199,8 @@ namespace NaiwaCompanion
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.4.1 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.5.0 · " + theme.Name, null, false).Enabled = false;
+            Item("小待办 · " + Todos.PendingCount + " 件待完成", delegate { ShowTodos(true); }, false);
             BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
             Item("按头回弹（演示）", delegate { DemoHeadPress(); }, false);
@@ -222,7 +228,7 @@ namespace NaiwaCompanion
             {
                 int size = value; ToolStripMenuItem choice = new ToolStripMenuItem(value + "%", null, delegate { SetSize(size); }); choice.Checked = prefs.Size == value; sizes.DropDownItems.Add(choice);
             }
-            Item("总在最上面", delegate { prefs.AlwaysOnTop = !prefs.AlwaysOnTop; TopMost = prefs.AlwaysOnTop; Save(); }, prefs.AlwaysOnTop);
+            Item("总在最上面", delegate { prefs.AlwaysOnTop = !prefs.AlwaysOnTop; TopMost = prefs.AlwaysOnTop; if (TodoPanel != null) TodoPanel.TopMost = prefs.AlwaysOnTop; Save(); }, prefs.AlwaysOnTop);
             Item("全屏时自动隐藏", delegate { prefs.HideFullscreen = !prefs.HideFullscreen; if (!prefs.HideFullscreen) SetHidden(false); Save(); }, prefs.HideFullscreen);
             Item("回到屏幕右下角", delegate { Home(); Render(true); Save(); }, false);
             menu.Items.Add(new ToolStripSeparator());
@@ -258,6 +264,13 @@ namespace NaiwaCompanion
                 }
             }
             if (themes.DropDownItems.Count == 1) { ToolStripMenuItem hint = new ToolStripMenuItem("将动作包放入 themes 文件夹"); hint.Enabled = false; themes.DropDownItems.Add(hint); }
+        }
+        internal void ShowTodos(bool activate)
+        {
+            if (TodoPanel == null || TodoPanel.IsDisposed)
+                TodoPanel = new TodoForm(Todos, prefs.AlwaysOnTop);
+            TodoPanel.OpenNear(Bounds, activate && !hidden);
+            if (hidden) TodoPanel.SetSuspended(true);
         }
         private void ImportTheme()
         {
@@ -379,10 +392,10 @@ namespace NaiwaCompanion
             Icon = petIcon; tray.Icon = petIcon; if (previous != null) previous.Dispose();
         }
         protected override void OnFormClosing(FormClosingEventArgs e)
-        { timer.Stop(); Save(); StopAudio(); base.OnFormClosing(e); }
+        { timer.Stop(); if (TodoPanel != null && !TodoPanel.IsDisposed) TodoPanel.Shutdown(); Save(); StopAudio(); base.OnFormClosing(e); }
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { timer.Dispose(); tray.Visible = false; tray.Dispose(); Font menuFont = menu.Font; menu.Dispose(); menuFont.Dispose(); if (audio != null) audio.Dispose(); if (reactionAudio != null) reactionAudio.Dispose(); if (petIcon != null) petIcon.Dispose(); theme.Dispose(); }
+            if (disposing) { if (TodoPanel != null) TodoPanel.Dispose(); timer.Dispose(); tray.Visible = false; tray.Dispose(); Font menuFont = menu.Font; menu.Dispose(); menuFont.Dispose(); if (audio != null) audio.Dispose(); if (reactionAudio != null) reactionAudio.Dispose(); if (petIcon != null) petIcon.Dispose(); theme.Dispose(); }
             base.Dispose(disposing);
         }
     }

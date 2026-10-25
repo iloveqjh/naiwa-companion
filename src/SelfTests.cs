@@ -22,6 +22,7 @@ namespace NaiwaCompanion
             Directory.CreateDirectory(output); log.Clear();
             try
             {
+                TodoTests.Run(output, Check);
                 TestCrawlMotion();
                 TestPalette();
                 TestHeadMotion();

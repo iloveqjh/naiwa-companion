@@ -31,7 +31,7 @@ namespace NaiwaCompanion
                 {
                     IntPtr found = Desktop.FindWindow(null, Desktop.WindowName); Desktop.Box box; Desktop.GetWindowRect(found, out box);
                     int state = found == IntPtr.Zero ? 0 : Desktop.SendMessage(found, Desktop.StatusMessage, IntPtr.Zero, IntPtr.Zero).ToInt32();
-                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0) + "\nHeadHeld=" + ((state & 8) != 0) + "\nHeadActive=" + ((state & 16) != 0) + "\nSoundEnabled=" + ((state & 32) != 0) + "\nReactionSoundReady=" + ((state & 64) != 0), Encoding.UTF8); return;
+                    File.WriteAllText(output, "Found=" + (found != IntPtr.Zero) + "\nVisible=" + Desktop.IsWindowVisible(found) + "\nBounds=" + box.L + "," + box.T + "," + box.R + "," + box.B + "\nCrawling=" + ((state & 2) != 0) + "\nPlaying=" + ((state & 4) != 0) + "\nHeadHeld=" + ((state & 8) != 0) + "\nHeadActive=" + ((state & 16) != 0) + "\nSoundEnabled=" + ((state & 32) != 0) + "\nReactionSoundReady=" + ((state & 64) != 0) + "\nTodoVisible=" + ((state & 128) != 0), Encoding.UTF8); return;
                 }
                 if (Array.IndexOf(args, "--quit") >= 0) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), 0x10, IntPtr.Zero, IntPtr.Zero); return; }
                 Preferences prefs = Preferences.Load(); string folder = Argument(args, "--assets");
@@ -45,7 +45,7 @@ namespace NaiwaCompanion
                 bool first;
                 using (Mutex single = new Mutex(true, "Local\\NaiwaCompanion.1", out first))
                 {
-                    if (!first) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), Desktop.WakeMessage, IntPtr.Zero, IntPtr.Zero); return; }
+                    if (!first) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), Array.IndexOf(args, "--show-todos") >= 0 ? Desktop.TodoMessage : Desktop.WakeMessage, IntPtr.Zero, IntPtr.Zero); return; }
                     Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e) { Report(e.Exception); Application.Exit(); };
                     Theme theme = null;
                     try { theme = new Theme(folder); }
@@ -67,6 +67,7 @@ namespace NaiwaCompanion
                         string action = Value(args, "--play");
                         if (action != null) pet.Shown += delegate { pet.PlayAction(action); };
                         if (Array.IndexOf(args, "--press-demo") >= 0) pet.Shown += delegate { pet.DemoHeadPress(); };
+                        if (Array.IndexOf(args, "--show-todos") >= 0) pet.Shown += delegate { pet.ShowTodos(true); };
                         Application.Run(pet);
                     }
                 }

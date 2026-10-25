@@ -36,6 +36,7 @@
 | 持续爬行、速度、碰边折返与暂停 | `src/CrawlMotion.cs`、`src/PetForm.cs` |
 | 主题亮度和颜色校准 | `src/Theme.cs`：`ApplyPalette`；主题包内 `colorGamma`、`colorGreen`、`colorBlue` |
 | 默认设置与保存 | `src/Preferences.cs` |
+| 桌面小待办、撤销和本地保存 | `src/TodoForm.cs`、`src/TodoStore.cs`、`docs/桌面小待办.md` |
 | 入口和命令行参数 | `src/Program.cs` |
 | 素材下载、固定哈希和准备窗口 | `src/AssetDownloader.cs` |
 | 回归测试和预览图 | `src/SelfTests.cs` |
