@@ -16,7 +16,7 @@ namespace NaiwaCompanion
         public bool RepeatAction;
         public bool CrawlEnabled = true;
         internal bool Ephemeral;
-        internal static string DirectoryPath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaiwaCompanion"); } }
+        internal static string DirectoryPath { get { return StoragePaths.Current.DataDirectory; } }
         internal static Preferences Load()
         {
             try

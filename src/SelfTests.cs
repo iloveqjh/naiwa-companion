@@ -23,6 +23,8 @@ namespace NaiwaCompanion
             try
             {
                 TodoTests.Run(output, Check);
+                UtilityTests.Run(output, Check);
+                PocketTests.Run(output, Check);
                 TestCrawlMotion();
                 TestPalette();
                 TestHeadMotion();

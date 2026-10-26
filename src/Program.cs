@@ -19,6 +19,14 @@ namespace NaiwaCompanion
             Desktop.SetProcessDPIAware(); Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             try
             {
+                string conversion = Argument(args, "--convert-worker");
+                if (conversion != null) { Environment.ExitCode = Conversion.Worker(conversion); return; }
+                conversion = Argument(args, "--convert-request");
+                if (conversion != null)
+                {
+                    ConversionReceipt receipt = Conversion.Convert(Conversion.ReadJson<ConversionRequest>(conversion), ConverterTools.Load(false).Value, CancellationToken.None, delegate { });
+                    Conversion.WriteJson(conversion + ".result.json", receipt); Environment.ExitCode = receipt.Success ? 0 : 1; return;
+                }
                 string download = Argument(args, "--download-assets");
                 if (download != null)
                 {
@@ -45,7 +53,7 @@ namespace NaiwaCompanion
                 bool first;
                 using (Mutex single = new Mutex(true, "Local\\NaiwaCompanion.1", out first))
                 {
-                    if (!first) { Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), Array.IndexOf(args, "--show-todos") >= 0 ? Desktop.TodoMessage : Desktop.WakeMessage, IntPtr.Zero, IntPtr.Zero); return; }
+                    if (!first) { int message = Array.IndexOf(args, "--show-todos") >= 0 ? Desktop.TodoMessage : Array.IndexOf(args, "--show-snippets") >= 0 ? Desktop.SnippetsMessage : Array.IndexOf(args, "--show-converter") >= 0 ? Desktop.ConvertMessage : Array.IndexOf(args, "--show-pocket") >= 0 ? Desktop.PocketMessage : Array.IndexOf(args, "--say") >= 0 ? Desktop.SayMessage : Desktop.WakeMessage; Desktop.PostMessage(Desktop.FindWindow(null, Desktop.WindowName), message, IntPtr.Zero, IntPtr.Zero); return; }
                     Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e) { Report(e.Exception); Application.Exit(); };
                     Theme theme = null;
                     try { theme = new Theme(folder); }
@@ -68,6 +76,10 @@ namespace NaiwaCompanion
                         if (action != null) pet.Shown += delegate { pet.PlayAction(action); };
                         if (Array.IndexOf(args, "--press-demo") >= 0) pet.Shown += delegate { pet.DemoHeadPress(); };
                         if (Array.IndexOf(args, "--show-todos") >= 0) pet.Shown += delegate { pet.ShowTodos(true); };
+                        if (Array.IndexOf(args, "--show-snippets") >= 0) pet.Shown += delegate { pet.ShowSnippets(false); };
+                        if (Array.IndexOf(args, "--show-converter") >= 0) pet.Shown += delegate { pet.ShowConverter(); };
+                        if (Array.IndexOf(args, "--show-pocket") >= 0) pet.Shown += delegate { pet.ShowPocket(); };
+                        if (Array.IndexOf(args, "--say") >= 0) pet.Shown += delegate { if (pet.Speech != null) pet.Speech.ManualLine(pet.Bounds, prefs.AlwaysOnTop); };
                         Application.Run(pet);
                     }
                 }
@@ -75,6 +87,11 @@ namespace NaiwaCompanion
             catch (Exception e) { Report(e); Environment.ExitCode = 1; }
         }
         private static void Report(Exception e)
-        { Preferences.Log(e); MessageBox.Show("奶蛙陪伴遇到问题：\n" + e.Message + "\n\n错误记录：" + Preferences.DirectoryPath, "奶蛙陪伴"); }
+        {
+            Preferences.Log(e); string location;
+            try { location = "错误记录：" + Preferences.DirectoryPath; }
+            catch { location = "请检查程序旁的 storage.local.json 存储位置配置。"; }
+            MessageBox.Show("奶蛙陪伴遇到问题：\n" + e.Message + "\n\n" + location, "奶蛙陪伴");
+        }
     }
 }

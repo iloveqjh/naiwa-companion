@@ -19,6 +19,14 @@ namespace NaiwaCompanion
         private readonly NotifyIcon tray = new NotifyIcon();
         internal readonly TodoStore Todos;
         internal TodoForm TodoPanel { get; private set; }
+        internal readonly SpeechController Speech;
+        internal SnippetForm SnippetPanel { get; private set; }
+        internal ConversionForm ConversionPanel { get; private set; }
+        internal PocketForm PocketPanel { get; private set; }
+        internal DropChoiceForm DropPanel { get; private set; }
+        private bool dropHover;
+        private readonly string pocketRoot;
+        private SpeechSettingsForm speechPanel;
         private ActionSound audio, reactionAudio;
         private bool reactionSoundStarted;
         private Icon petIcon;
@@ -33,10 +41,17 @@ namespace NaiwaCompanion
         internal bool HiddenByFullscreen { get { return hidden; } }
         internal bool HasReactionSound { get { return reactionAudio != null && reactionAudio.Available; } }
 
-        internal PetForm(Theme loaded, Preferences settings)
+        internal PetForm(Theme loaded, Preferences settings, string pocketDirectory = null)
         {
             theme = loaded; prefs = settings;
+            pocketRoot = pocketDirectory ?? StoragePaths.Current.PocketDirectory;
             Todos = new TodoStore(prefs.Ephemeral ? null : TodoStore.DefaultPath);
+            if (!prefs.Ephemeral)
+            {
+                Speech = new SpeechController(Todos, Path.Combine(Preferences.DirectoryPath, "speech.json"));
+                Speech.OpenTasks += delegate { ShowTodos(true); };
+                Todos.Changed += delegate { Speech.TaskChanged(Todos.LastKind, Todos.LastText, SpeakerBounds(), prefs.AlwaysOnTop); };
+            }
             Animation.Head.ReactionDuration = theme.ReactionDuration;
             Text = Desktop.WindowName; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None; TopMost = prefs.AlwaysOnTop;
@@ -47,6 +62,14 @@ namespace NaiwaCompanion
             prefs.CanvasVersion = 1;
             if (prefs.X == int.MinValue || prefs.Y == int.MinValue) Home(); else Location = Clamp(new Point(prefs.X, prefs.Y), Size);
             Cursor = Cursors.Hand;
+            AllowDrop = true;
+            DragEnter += FileDragOver; DragOver += FileDragOver;
+            DragLeave += delegate { dropHover = false; };
+            DragDrop += delegate(object sender, DragEventArgs e)
+            {
+                dropHover = false;
+                if (e.Data.GetDataPresent(DataFormats.FileDrop)) ReceiveFiles((string[])e.Data.GetData(DataFormats.FileDrop));
+            };
             Crawl.Reset(Location);
             menu.Font = new Font("Microsoft YaHei UI", 10);
             RefreshIcon();
@@ -67,6 +90,10 @@ namespace NaiwaCompanion
         {
             if (m.Msg == Desktop.WakeMessage) { Home(); if (!hidden) { Show(); Render(true); } Save(); return; }
             if (m.Msg == Desktop.TodoMessage) { ShowTodos(true); return; }
+            if (m.Msg == Desktop.SnippetsMessage) { ShowSnippets(false); return; }
+            if (m.Msg == Desktop.ConvertMessage) { ShowConverter(); return; }
+            if (m.Msg == Desktop.PocketMessage) { ShowPocket(); return; }
+            if (m.Msg == Desktop.SayMessage) { if (Speech != null) Speech.ManualLine(SpeakerBounds(), prefs.AlwaysOnTop); return; }
             if (m.Msg == Desktop.StatusMessage) { m.Result = (IntPtr)((hidden ? 1 : 0) | (Animation.Crawling ? 2 : 0) | (Animation.Laughing ? 4 : 0) | (Animation.Head.Held ? 8 : 0) | (Animation.Head.Active ? 16 : 0) | (prefs.Sound ? 32 : 0) | (HasReactionSound ? 64 : 0) | (TodoPanel != null && TodoPanel.Visible ? 128 : 0)); return; }
             if (m.Msg == 0x21) { m.Result = (IntPtr)3; return; }
             if (m.Msg == 0x84 && ready && !pointer.Held)
@@ -131,13 +158,19 @@ namespace NaiwaCompanion
             Animation.Crawling = theme.CanCrawl && prefs.CrawlEnabled && !Animation.Head.Active;
             if (theme.CanCrawl)
             {
-                bool paused = !Animation.Crawling || Animation.Laughing || Animation.StandAt >= 0 || Animation.Dragging || pointer.Held || menuOpen || prefs.Ephemeral;
+                bool paused = !Animation.Crawling || Animation.Laughing || Animation.StandAt >= 0 || Animation.Dragging || pointer.Held || menuOpen || dropHover || (DropPanel != null && DropPanel.Visible) || prefs.Ephemeral;
                 Point next = Crawl.Advance(now, Screen.FromRectangle(Bounds).WorkingArea, Size, theme.Manifest.crawlSpeed * prefs.Size / 100.0, paused);
                 if (!paused) Location = next;
                 Animation.CrawlTime = Crawl.Time; Animation.FacingLeft = Crawl.Direction < 0;
             }
             if (repeatAt >= 0 && now >= repeatAt && !pointer.Held && !menuOpen) { repeatAt = -1; Laugh(); }
             Render(false);
+            if (Speech != null)
+            {
+                Speech.CheckSnooze(now);
+                bool editing = (TodoPanel != null && TodoPanel.ContainsFocus) || (SnippetPanel != null && SnippetPanel.ContainsFocus) || (ConversionPanel != null && ConversionPanel.ContainsFocus) || (PocketPanel != null && PocketPanel.ContainsFocus) || (DropPanel != null && DropPanel.Visible) || (speechPanel != null && speechPanel.ContainsFocus);
+                Speech.Tick(now, pointer.Held || menuOpen || Animation.Head.Active || Animation.Laughing || Animation.Dragging || Animation.DropAt >= 0 || Animation.PokeAt >= 0, editing, SpeakerBounds(), prefs.AlwaysOnTop);
+            }
             // When the gaze settles, reduce idle wakeups. Playback still uses its own clock.
             bool changingEyes = Math.Abs(Animation.GazeX - target.X) + Math.Abs(Animation.GazeY - target.Y) > .01;
             timer.Interval = Animation.Active || Animation.Crawling || changingEyes ? 16 : 80;
@@ -147,11 +180,18 @@ namespace NaiwaCompanion
             if (hidden == value) return;
             hidden = value; bool resting = Animation.Resting;
             headCandidate = headPressGesture = false;
+            dropHover = false;
             repeatAt = -1;
             Animation.Crawling = false; Crawl.Reset(Location);
             Animation.Stop(Now); Animation.Resting = resting;
             StopAudio(); pointer.Cancel(); Capture = false;
             if (TodoPanel != null) TodoPanel.SetSuspended(value);
+            if (SnippetPanel != null) SnippetPanel.SuspendForFullscreen(value);
+            if (ConversionPanel != null) ConversionPanel.SuspendForFullscreen(value);
+            if (PocketPanel != null) PocketPanel.SuspendForFullscreen(value);
+            if (DropPanel != null) DropPanel.SuspendForFullscreen(value);
+            if (speechPanel != null) speechPanel.SuspendForFullscreen(value);
+            if (Speech != null) Speech.HideForFullscreen(value, Now);
             if (value) { Hide(); timer.Interval = 150; }
             else { Show(); timer.Interval = 16; Render(true); }
         }
@@ -185,13 +225,13 @@ namespace NaiwaCompanion
             { if (hidden) return false; prefs.CrawlEnabled = true; Animation.Stop(Now); Animation.Crawling = true; Save(); Render(true); return true; }
             if (hidden || !Animation.StartLaugh(Now)) return false;
             StopAudio(); repeatAt = -1;
-            if (prefs.Sound && audio != null) audio.Play(); Render(true); return true;
+            if (prefs.Sound && audio != null) audio.Play(); if (Speech != null) Speech.Interaction("laugh", Now); Render(true); return true;
         }
         private void StopLaugh() { repeatAt = -1; Animation.Stop(Now); StopAudio(); Render(true); }
         internal void PlayAction(string id)
         { StopLaugh(); theme.SelectAction(id); LoadAudio(); Laugh(); }
         internal void DemoHeadPress()
-        { repeatAt = -1; StopAudio(); Animation.DemoHeadPress(Now); timer.Interval = 16; Render(true); }
+        { repeatAt = -1; StopAudio(); Animation.DemoHeadPress(Now); if (Speech != null) Speech.Interaction("head", Now); timer.Interval = 16; Render(true); }
         private void ToggleCrawl()
         { prefs.CrawlEnabled = !prefs.CrawlEnabled; StopLaugh(); Animation.Crawling = prefs.CrawlEnabled; Crawl.Reset(Location); Save(); }
         private ToolStripMenuItem Item(string label, EventHandler action, bool selected)
@@ -199,8 +239,20 @@ namespace NaiwaCompanion
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.5.0 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.7.0 · " + theme.Name, null, false).Enabled = false;
             Item("小待办 · " + Todos.PendingCount + " 件待完成", delegate { ShowTodos(true); }, false);
+            Item("文字收藏…", delegate { ShowSnippets(false); }, false);
+            Item("收藏剪贴板文字…", delegate { ShowSnippets(true); }, false);
+            Item("文件转换…", delegate { ShowConverter(); }, false);
+            Item("文件口袋 · 查看暂存文件…", delegate { ShowPocket(); }, false);
+            if (Speech != null)
+            {
+                ToolStripMenuItem speech = Item("奶蛙说话", null, false);
+                speech.DropDownItems.Add("汇报待办", null, delegate { Speech.Report(SpeakerBounds(), prefs.AlwaysOnTop); });
+                speech.DropDownItems.Add("说一句", null, delegate { Speech.ManualLine(SpeakerBounds(), prefs.AlwaysOnTop); });
+                speech.DropDownItems.Add("说话设置…", null, delegate { ShowSpeechSettings(); });
+                speech.DropDownItems.Add("安静1小时", null, delegate { if (!Speech.MuteHour()) MessageBox.Show(Speech.Settings.Error, "设置未保存"); });
+            }
             BuildThemesMenu();
             menu.Items.Add(new ToolStripSeparator());
             Item("按头回弹（演示）", delegate { DemoHeadPress(); }, false);
@@ -228,7 +280,7 @@ namespace NaiwaCompanion
             {
                 int size = value; ToolStripMenuItem choice = new ToolStripMenuItem(value + "%", null, delegate { SetSize(size); }); choice.Checked = prefs.Size == value; sizes.DropDownItems.Add(choice);
             }
-            Item("总在最上面", delegate { prefs.AlwaysOnTop = !prefs.AlwaysOnTop; TopMost = prefs.AlwaysOnTop; if (TodoPanel != null) TodoPanel.TopMost = prefs.AlwaysOnTop; Save(); }, prefs.AlwaysOnTop);
+            Item("总在最上面", delegate { prefs.AlwaysOnTop = !prefs.AlwaysOnTop; TopMost = prefs.AlwaysOnTop; if (TodoPanel != null) TodoPanel.TopMost = prefs.AlwaysOnTop; if (SnippetPanel != null) SnippetPanel.TopMost = prefs.AlwaysOnTop; if (ConversionPanel != null) ConversionPanel.TopMost = prefs.AlwaysOnTop; if (PocketPanel != null) PocketPanel.TopMost = prefs.AlwaysOnTop; if (DropPanel != null) DropPanel.TopMost = prefs.AlwaysOnTop; if (speechPanel != null) speechPanel.TopMost = prefs.AlwaysOnTop; Save(); }, prefs.AlwaysOnTop);
             Item("全屏时自动隐藏", delegate { prefs.HideFullscreen = !prefs.HideFullscreen; if (!prefs.HideFullscreen) SetHidden(false); Save(); }, prefs.HideFullscreen);
             Item("回到屏幕右下角", delegate { Home(); Render(true); Save(); }, false);
             menu.Items.Add(new ToolStripSeparator());
@@ -271,6 +323,52 @@ namespace NaiwaCompanion
                 TodoPanel = new TodoForm(Todos, prefs.AlwaysOnTop);
             TodoPanel.OpenNear(Bounds, activate && !hidden);
             if (hidden) TodoPanel.SetSuspended(true);
+        }
+        internal void ShowSnippets(bool clipboard)
+        {
+            if (SnippetPanel == null || SnippetPanel.IsDisposed) SnippetPanel = new SnippetForm(new SnippetStore(prefs.Ephemeral ? null : Path.Combine(Preferences.DirectoryPath, "snippets.json")));
+            SnippetPanel.Reveal(prefs.AlwaysOnTop); if (clipboard) SnippetPanel.CaptureClipboard(); if (hidden) SnippetPanel.SuspendForFullscreen(true);
+        }
+        internal void ShowConverter()
+        {
+            if (ConversionPanel == null || ConversionPanel.IsDisposed)
+            {
+                ConversionPanel = new ConversionForm(prefs.Ephemeral);
+                ConversionPanel.Finished += delegate { if (Speech != null) Speech.UtilityMessage(ConversionPanel.CompletionMessage, SpeakerBounds(), prefs.AlwaysOnTop); };
+            }
+            ConversionPanel.Reveal(prefs.AlwaysOnTop); if (hidden) ConversionPanel.SuspendForFullscreen(true);
+        }
+        private void FileDragOver(object sender, DragEventArgs e)
+        {
+            bool accept = !hidden && e.Data.GetDataPresent(DataFormats.FileDrop) && (e.AllowedEffect & DragDropEffects.Copy) != 0 && (PocketPanel == null || !PocketPanel.Busy);
+            e.Effect = accept ? DragDropEffects.Copy : DragDropEffects.None; dropHover = accept;
+        }
+        internal void ReceiveFiles(string[] paths)
+        {
+            if (paths == null || paths.Length == 0 || hidden) return;
+            if (DropPanel != null) DropPanel.Dispose();
+            DropPanel = new DropChoiceForm(paths, delegate(string[] selected) { ShowPocket(); PocketPanel.StashFiles(selected); }, ConvertFiles, ShowPocket);
+            DropPanel.Reveal(prefs.AlwaysOnTop);
+        }
+        internal void ConvertFiles(string[] paths) { ShowConverter(); ConversionPanel.AddFiles(paths); }
+        internal void ShowPocket()
+        {
+            if (PocketPanel == null || PocketPanel.IsDisposed)
+            {
+                PocketPanel = new PocketForm(new PocketStore(pocketRoot), ConvertFiles);
+                PocketPanel.Finished += delegate { if (Speech != null) Speech.UtilityMessage(PocketPanel.CompletionMessage, SpeakerBounds(), prefs.AlwaysOnTop); };
+            }
+            PocketPanel.RefreshFiles(); PocketPanel.Reveal(prefs.AlwaysOnTop); if (hidden) PocketPanel.SuspendForFullscreen(true);
+        }
+        private void ShowSpeechSettings()
+        {
+            if (speechPanel != null) speechPanel.Dispose();
+            speechPanel = new SpeechSettingsForm(Speech, delegate { Speech.Reset(Now); }); speechPanel.Reveal(prefs.AlwaysOnTop); if (hidden) speechPanel.SuspendForFullscreen(true);
+        }
+        private Rectangle SpeakerBounds()
+        {
+            int pad = Painter.Padding(theme, prefs.Size); Rectangle body = theme.BodyBounds;
+            return new Rectangle(Left + pad + body.Left * prefs.Size / 100, Top + pad + body.Top * prefs.Size / 100, Math.Max(1, body.Width * prefs.Size / 100), Math.Max(1, body.Height * prefs.Size / 100));
         }
         private void ImportTheme()
         {
@@ -323,6 +421,7 @@ namespace NaiwaCompanion
             base.OnMouseDown(e);
             if (e.Button == MouseButtons.Right) { pointer.Cancel(); Capture = false; menu.Show(this, e.Location); return; }
             if (e.Button != MouseButtons.Left) return;
+            if (Speech != null && Speech.Bubble != null) Speech.Bubble.Hide();
             headPressGesture = false;
             headCandidate = HitHead(e.Location);
             pointer.Down(PointToScreen(e.Location)); dragOrigin = Location; lastPointer = pointer.Origin; lastMoveAt = Now; Capture = true;
@@ -358,15 +457,16 @@ namespace NaiwaCompanion
             {
                 headPressGesture = false;
                 Animation.Head.Advance(Now); Animation.Head.Release(Now); pointer.Cancel(); Capture = false;
+                if (Speech != null) Speech.Interaction("head", Now);
                 Crawl.Reset(Location); Render(true); return;
             }
             bool moved = pointer.Moved;
             bool twice = pointer.Up(PointToScreen(e.Location), Now, SystemInformation.DoubleClickTime, SystemInformation.DoubleClickSize); Capture = false;
-            if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); Save(); }
+            if (moved) { Animation.Release(Now); Location = Clamp(Location, Size); Crawl.Reset(Location); if (Speech != null) Speech.Interaction("drag", Now); Save(); }
             else if (theme.CanCrawl && !twice) ToggleCrawl();
             else if (twice) Laugh();
             else if (Animation.Resting) Animation.Stand(Now);
-            else { int pad = Painter.Padding(theme, prefs.Size); Animation.Poke(Now, new PointF((e.X - pad) * 100f / prefs.Size, (e.Y - pad) * 100f / prefs.Size), new Size(theme.Width, theme.Height), theme.Belly); }
+            else { int pad = Painter.Padding(theme, prefs.Size); bool poked = Animation.Poke(Now, new PointF((e.X - pad) * 100f / prefs.Size, (e.Y - pad) * 100f / prefs.Size), new Size(theme.Width, theme.Height), theme.Belly); if (Speech != null) Speech.Interaction(poked ? "belly" : "click", Now); }
             Render(true);
         }
         protected override void OnMouseCaptureChanged(EventArgs e)
@@ -392,10 +492,10 @@ namespace NaiwaCompanion
             Icon = petIcon; tray.Icon = petIcon; if (previous != null) previous.Dispose();
         }
         protected override void OnFormClosing(FormClosingEventArgs e)
-        { timer.Stop(); if (TodoPanel != null && !TodoPanel.IsDisposed) TodoPanel.Shutdown(); Save(); StopAudio(); base.OnFormClosing(e); }
+        { timer.Stop(); if (ConversionPanel != null) ConversionPanel.CancelAndWait(); if (PocketPanel != null) PocketPanel.CancelAndWait(); if (TodoPanel != null && !TodoPanel.IsDisposed) TodoPanel.Shutdown(); if (SnippetPanel != null) SnippetPanel.ShutdownPanel(); if (ConversionPanel != null) ConversionPanel.ShutdownPanel(); if (PocketPanel != null) PocketPanel.ShutdownPanel(); if (DropPanel != null) DropPanel.ShutdownPanel(); if (speechPanel != null) speechPanel.ShutdownPanel(); if (Speech != null) Speech.Dispose(); Save(); StopAudio(); base.OnFormClosing(e); }
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { if (TodoPanel != null) TodoPanel.Dispose(); timer.Dispose(); tray.Visible = false; tray.Dispose(); Font menuFont = menu.Font; menu.Dispose(); menuFont.Dispose(); if (audio != null) audio.Dispose(); if (reactionAudio != null) reactionAudio.Dispose(); if (petIcon != null) petIcon.Dispose(); theme.Dispose(); }
+            if (disposing) { if (PocketPanel != null) { PocketPanel.CancelAndWait(); PocketPanel.Dispose(); } if (DropPanel != null) DropPanel.Dispose(); if (SnippetPanel != null) SnippetPanel.Dispose(); if (ConversionPanel != null) ConversionPanel.Dispose(); if (speechPanel != null) speechPanel.Dispose(); if (Speech != null) Speech.Dispose(); if (TodoPanel != null) TodoPanel.Dispose(); timer.Dispose(); tray.Visible = false; tray.Dispose(); Font menuFont = menu.Font; menu.Dispose(); menuFont.Dispose(); if (audio != null) audio.Dispose(); if (reactionAudio != null) reactionAudio.Dispose(); if (petIcon != null) petIcon.Dispose(); theme.Dispose(); }
             base.Dispose(disposing);
         }
     }

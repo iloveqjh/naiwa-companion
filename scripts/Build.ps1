@@ -7,7 +7,7 @@ if (!(Test-Path -LiteralPath $compiler)) { throw '未找到 .NET Framework 4.x C
 $outDir = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $files = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
-& $compiler /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 "/out:$outDir\NaiwaCompanion.exe" "/win32manifest:$projectRoot\src\App.manifest" /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Web.Extensions.dll @files
+& $compiler /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 "/out:$outDir\NaiwaCompanion.exe" "/win32manifest:$projectRoot\src\App.manifest" "/resource:$projectRoot\examples\naiwa-speech-lines.json,NaiwaCompanion.Speech.json" /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /reference:System.Web.Extensions.dll /reference:Microsoft.CSharp.dll @files
 if ($LASTEXITCODE -ne 0) { throw '构建失败。' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\使用说明.txt') -Destination $outDir
 Write-Output "构建完成：$outDir\NaiwaCompanion.exe"

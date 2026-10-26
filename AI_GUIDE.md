@@ -38,6 +38,10 @@
 | 默认设置与保存 | `src/Preferences.cs` |
 | 桌面小待办、撤销和本地保存 | `src/TodoForm.cs`、`src/TodoStore.cs`、`docs/桌面小待办.md` |
 | 入口和命令行参数 | `src/Program.cs` |
+| 说话气泡、提醒与文案 | `src/Speech.cs`、`examples/naiwa-speech-lines.json` |
+| 本机文字收藏与通用数据保护 | `src/Snippets.cs`、`src/LocalData.cs` |
+| 文件转换、工具路径与输出校验 | `src/Conversion.cs`、`src/OfficeConversion.cs`、`src/ConversionForm.cs` |
+| 文件拖入、文件口袋、本机存储目录 | `src/Pocket.cs`、`src/PetForm.cs`、`src/PocketTests.cs`、`docs/文件口袋.md` |
 | 素材下载、固定哈希和准备窗口 | `src/AssetDownloader.cs` |
 | 回归测试和预览图 | `src/SelfTests.cs` |
 
@@ -55,4 +59,4 @@
 
 ## 当前主题说明
 
-程序公开版为 1.4.1。参考主题最终参数见 `docs/主题修订记录.md` 与 `examples/reference-theme-revision.json`；太极注视停留约 1.2 秒、反应总长约 1.57 秒。不要沿用历史多步骤动作说明。公开 ZIP 不含个人录屏包；说明中的主题专属效果依赖用户导入相应素材。主题帧若已烘焙校色，调色参数应为 1，避免再次染色。
+程序公开版为 1.7.0，包含小待办、文字气泡、收藏、转换和文件口袋。参考主题最终参数见 `docs/主题修订记录.md` 与 `examples/reference-theme-revision.json`；太极注视停留约 1.2 秒、反应总长约 1.57 秒。不要沿用历史多步骤动作说明。公开 ZIP 不含个人录屏包、用户数据与第三方转换工具；工具要求见 `docs/转换工具配置.md`。主题帧若已烘焙校色，调色参数应为 1，避免再次染色。

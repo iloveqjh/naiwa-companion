@@ -35,6 +35,7 @@ namespace NaiwaCompanion
         internal string Notice { get; private set; }
         internal string LastError { get; private set; }
         internal event EventHandler Changed;
+        internal string LastKind = "change", LastText = "";
         internal TodoDocument View { get { return data; } }
         internal List<TodoItem> Items { get { return Copy(data.Items); } }
         internal int PendingCount { get { return data.Items.FindAll(delegate(TodoItem t) { return !t.Completed; }).Count; } }
@@ -112,11 +113,11 @@ namespace NaiwaCompanion
             }
             catch (Exception e) { LastError = "保存失败，内容尚未更改：" + e.Message; return false; }
         }
-        private bool Commit(List<TodoItem> items)
+        private bool Commit(List<TodoItem> items, string kind = "change", string text = "")
         {
             List<TodoItem> before = Copy(data.Items);
             if (!Persist(WithItems(items))) return false;
-            undo = before;
+            undo = before; LastKind = kind; LastText = text;
             if (Changed != null) Changed(this, EventArgs.Empty);
             return true;
         }
@@ -133,21 +134,21 @@ namespace NaiwaCompanion
             if (data.Items.Count >= ItemLimit) { LastError = "待办已满，请先清理一些已完成事项。"; return false; }
             List<TodoItem> items = Items;
             items.Add(new TodoItem { Id = Guid.NewGuid().ToString("N"), Text = text.Trim(), CreatedUtc = DateTime.UtcNow.ToString("o") });
-            return Commit(items);
+            return Commit(items, "add", text.Trim());
         }
         internal bool Edit(string id, string text)
         {
             if (!ValidText(text)) return false;
             List<TodoItem> items = Items; TodoItem item = items.Find(delegate(TodoItem t) { return t.Id == id; });
             if (item == null) return false;
-            item.Text = text.Trim(); return Commit(items);
+            item.Text = text.Trim(); return Commit(items, "edit", item.Text);
         }
         internal bool Toggle(string id)
         {
             List<TodoItem> items = Items; TodoItem item = items.Find(delegate(TodoItem t) { return t.Id == id; });
             if (item == null) return false;
             item.Completed = !item.Completed; item.CompletedUtc = item.Completed ? DateTime.UtcNow.ToString("o") : null;
-            return Commit(items);
+            return Commit(items, item.Completed ? "complete" : "restore", item.Text);
         }
         internal bool Delete(string id)
         {
@@ -164,7 +165,7 @@ namespace NaiwaCompanion
         internal bool Undo()
         {
             if (!CanUndo || !Persist(WithItems(Copy(undo)))) return false;
-            undo = null; if (Changed != null) Changed(this, EventArgs.Empty); return true;
+            undo = null; LastKind = "undo"; LastText = ""; if (Changed != null) Changed(this, EventArgs.Empty); return true;
         }
         internal bool SaveView(bool open, bool expanded, Point location)
         {
