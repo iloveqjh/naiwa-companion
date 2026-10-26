@@ -15,6 +15,7 @@ namespace NaiwaCompanion
         public string ThemeFolder = "";
         public bool RepeatAction;
         public bool CrawlEnabled = true;
+        public bool AllowFileDrop = true;
         internal bool Ephemeral;
         internal static string DirectoryPath { get { return StoragePaths.Current.DataDirectory; } }
         internal static Preferences Load()

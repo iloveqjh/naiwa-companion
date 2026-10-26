@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 namespace NaiwaCompanion
@@ -62,6 +63,8 @@ namespace NaiwaCompanion
                 check(disabled, "folder-only drops offer storage without an invalid conversion option");
             }
             string uiPocket = Path.Combine(root, "ui-pocket");
+            JavaScriptSerializer json = new JavaScriptSerializer();
+            check(json.Deserialize<Preferences>("{\"Size\":85}").AllowFileDrop, "legacy settings without a drop preference keep the enabled default");
             using (Theme theme = new Theme(null)) using (PetForm pet = new PetForm(theme, new Preferences { Ephemeral = true }, uiPocket))
             {
                 pet.Show(); Application.DoEvents();
@@ -86,6 +89,25 @@ namespace NaiwaCompanion
                 pet.ReceiveFiles(new string[] { original }); Click(pet.DropPanel, "转换格式…");
                 rows = 0; foreach (Control control in pet.ConversionPanel.Controls) if (control is ListView) rows = ((ListView)control).Items.Count;
                 check(pet.ConversionPanel.Visible && rows == 1, "chooser conversion action queues the dropped file in the existing converter");
+                pet.ReceiveFiles(new string[] { original });
+                pet.SetFileDropEnabled(false);
+                DragEventArgs disabled = new DragEventArgs(data, 0, 0, 0, DragDropEffects.Copy, DragDropEffects.Copy);
+                typeof(Control).GetMethod("OnDragEnter", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(pet, new object[] { disabled });
+                pet.ReceiveFiles(new string[] { original });
+                check(!pet.AllowDrop && disabled.Effect == DragDropEffects.None && pet.DropPanel == null, "disabling file drops unregisters the target and dismisses pending choices");
+                pet.SetHidden(true); pet.SetHidden(false);
+                check(pet.DropPanel == null && File.Exists(Path.Combine(uiPocket, Path.GetFileName(original))), "disabled drop choices stay closed across fullscreen and stored files remain intact");
+                pet.ShowPocket();
+                check(pet.PocketPanel.Visible, "manual pocket access stays available when pet drops are disabled");
+                pet.SetFileDropEnabled(true);
+                pet.ReceiveFiles(new string[] { original });
+                check(pet.AllowDrop && pet.DropPanel != null && pet.DropPanel.Visible, "re-enabling pet drops immediately restores the chooser");
+            }
+            Preferences saved = json.Deserialize<Preferences>(json.Serialize(new Preferences { AllowFileDrop = false })); saved.Ephemeral = true;
+            using (Theme theme = new Theme(null)) using (PetForm restarted = new PetForm(theme, saved, uiPocket))
+            {
+                restarted.ReceiveFiles(new string[] { original });
+                check(!saved.AllowFileDrop && !restarted.AllowDrop && restarted.DropPanel == null, "a saved disabled preference is honored by a restarted pet");
             }
         }
         private static void Click(Form form, string label) { foreach (Control control in form.Controls) if (control is Button && control.Text == label) { ((Button)control).PerformClick(); return; } throw new Exception("Missing button " + label); }

@@ -62,7 +62,7 @@ namespace NaiwaCompanion
             prefs.CanvasVersion = 1;
             if (prefs.X == int.MinValue || prefs.Y == int.MinValue) Home(); else Location = Clamp(new Point(prefs.X, prefs.Y), Size);
             Cursor = Cursors.Hand;
-            AllowDrop = true;
+            AllowDrop = prefs.AllowFileDrop;
             DragEnter += FileDragOver; DragOver += FileDragOver;
             DragLeave += delegate { dropHover = false; };
             DragDrop += delegate(object sender, DragEventArgs e)
@@ -239,12 +239,13 @@ namespace NaiwaCompanion
         private void BuildMenu()
         {
             while (menu.Items.Count > 0) menu.Items[0].Dispose();
-            Item("奶蛙陪伴 1.7.0 · " + theme.Name, null, false).Enabled = false;
+            Item("奶蛙陪伴 1.7.1 · " + theme.Name, null, false).Enabled = false;
             Item("小待办 · " + Todos.PendingCount + " 件待完成", delegate { ShowTodos(true); }, false);
             Item("文字收藏…", delegate { ShowSnippets(false); }, false);
             Item("收藏剪贴板文字…", delegate { ShowSnippets(true); }, false);
             Item("文件转换…", delegate { ShowConverter(); }, false);
             Item("文件口袋 · 查看暂存文件…", delegate { ShowPocket(); }, false);
+            Item("允许拖文件到奶蛙", delegate { SetFileDropEnabled(!prefs.AllowFileDrop); }, prefs.AllowFileDrop);
             if (Speech != null)
             {
                 ToolStripMenuItem speech = Item("奶蛙说话", null, false);
@@ -340,12 +341,18 @@ namespace NaiwaCompanion
         }
         private void FileDragOver(object sender, DragEventArgs e)
         {
-            bool accept = !hidden && e.Data.GetDataPresent(DataFormats.FileDrop) && (e.AllowedEffect & DragDropEffects.Copy) != 0 && (PocketPanel == null || !PocketPanel.Busy);
+            bool accept = prefs.AllowFileDrop && !hidden && e.Data.GetDataPresent(DataFormats.FileDrop) && (e.AllowedEffect & DragDropEffects.Copy) != 0 && (PocketPanel == null || !PocketPanel.Busy);
             e.Effect = accept ? DragDropEffects.Copy : DragDropEffects.None; dropHover = accept;
+        }
+        internal void SetFileDropEnabled(bool enabled)
+        {
+            prefs.AllowFileDrop = enabled; AllowDrop = enabled; dropHover = false;
+            if (!enabled && DropPanel != null) { DropPanel.Dispose(); DropPanel = null; }
+            Save();
         }
         internal void ReceiveFiles(string[] paths)
         {
-            if (paths == null || paths.Length == 0 || hidden) return;
+            if (!prefs.AllowFileDrop || paths == null || paths.Length == 0 || hidden) return;
             if (DropPanel != null) DropPanel.Dispose();
             DropPanel = new DropChoiceForm(paths, delegate(string[] selected) { ShowPocket(); PocketPanel.StashFiles(selected); }, ConvertFiles, ShowPocket);
             DropPanel.Reveal(prefs.AlwaysOnTop);
