@@ -1,0 +1,9 @@
+{
+  "windows_powershell_restore": "passed",
+  "restored_files": 7,
+  "all_restored_hashes": "passed",
+  "all_three_theme_paths": "passed",
+  "personal_data_restored": "passed",
+  "corrupted_backup_rejected_before_write": "passed",
+  "program_behavior_tests": "not run; animation and application code unchanged"
+}

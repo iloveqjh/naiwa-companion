@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "note": "仅包含主题结构、动作参数和SHA-256；不包含原版图片、动作帧和音频。完整主题见个人私有备份。",
+  "themes": [
+    {
+      "id": "angel",
+      "sha256": "cf87d127a297eaad381cf29972cfafd2f8edb7a7aa90f169b713ab2d51f58df7",
+      "bytes": 56884031,
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "angel",
+        "name": "天使奶蛙",
+        "width": 384,
+        "height": 448,
+        "idle": "idle.png",
+        "eyes": [
+          {
+            "x": 179.5,
+            "y": 104.5,
+            "width": 16.5,
+            "height": 20
+          }
+        ],
+        "belly": {
+          "x": 121.46000000000001,
+          "y": 201.99999999999997,
+          "width": 115.2,
+          "height": 130.56
+        },
+        "source": "用户提供的手机录屏，仅作本机动作包",
+        "actions": [
+          {
+            "id": "chant",
+            "name": "神圣吟唱",
+            "frames": 378,
+            "fps": 30,
+            "prefix": "actions/chant/",
+            "endPose": "idle",
+            "sourceStart": 90.85,
+            "sourceEnd": 103.45,
+            "audio": "audio/chant.wav"
+          },
+          {
+            "id": "prayer",
+            "name": "合掌祈祷",
+            "frames": 127,
+            "fps": 30,
+            "prefix": "actions/prayer/",
+            "endPose": "idle",
+            "sourceStart": 121.75,
+            "sourceEnd": 125.98,
+            "audio": "audio/prayer.wav"
+          },
+          {
+            "id": "press-reaction",
+            "name": "合掌祈祷，再复原",
+            "prefix": "actions/press-reaction/",
+            "endPose": "idle",
+            "frames": 115,
+            "fps": 60,
+            "audio": "audio/press-reaction.wav"
+          }
+        ],
+        "colorGamma": 1,
+        "colorGreen": 1,
+        "colorBlue": 1,
+        "headReactionAction": "press-reaction",
+        "headReactionSeamless": true,
+        "motionRevision": "angel-hand-edge-and-full-palm-path-3",
+        "colorReference": "classic-yellow-20261022"
+      }
+    },
+    {
+      "id": "cuddle",
+      "sha256": "478e33025d11fdf01bdaa76ec0ca9a0829655e3df7522ef6793ff8814a18d8fe",
+      "bytes": 20661666,
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "cuddle",
+        "name": "爬爬奶蛙",
+        "width": 448,
+        "height": 448,
+        "idle": "idle.png",
+        "eyes": [
+          {
+            "x": 320.5,
+            "y": 284.5,
+            "width": 20,
+            "height": 20
+          }
+        ],
+        "belly": {
+          "x": 120.1,
+          "y": 302.15999999999997,
+          "width": 138.24,
+          "height": 90.72
+        },
+        "source": "用户提供的手机录屏，仅作本机动作包",
+        "actions": [
+          {
+            "id": "crawl",
+            "name": "向前爬行",
+            "frames": 106,
+            "fps": 60,
+            "prefix": "actions/crawl/",
+            "endPose": "idle"
+          },
+          {
+            "id": "chuckle",
+            "name": "趴着偷笑",
+            "frames": 92,
+            "fps": 30,
+            "prefix": "actions/chuckle/",
+            "endPose": "idle",
+            "sourceStart": 5.85,
+            "sourceEnd": 8.95,
+            "audio": "audio/chuckle.wav"
+          },
+          {
+            "id": "peek",
+            "name": "回头看看",
+            "frames": 36,
+            "fps": 30,
+            "prefix": "actions/peek/",
+            "endPose": "idle",
+            "sourceStart": 5.666666666666667,
+            "sourceEnd": 6.833333333333333
+          },
+          {
+            "id": "press-reaction",
+            "name": "回头看看，再趴着偷笑",
+            "prefix": "actions/press-reaction/",
+            "endPose": "idle",
+            "frames": 98,
+            "fps": 30,
+            "audio": "audio/press-reaction.wav"
+          }
+        ],
+        "colorGamma": 1,
+        "colorGreen": 1,
+        "colorBlue": 1,
+        "locomotionAction": "crawl",
+        "crawlSpeed": 84.177,
+        "headReactionAction": "press-reaction",
+        "motionRevision": "full-forward-stride-60fps-20261021",
+        "colorReference": "classic-yellow-20261022"
+      }
+    },
+    {
+      "id": "kungfu",
+      "sha256": "dc8d2346643a6593874252a2c43356fd46c8d1f877e4ac0a6da09b913ab907b4",
+      "bytes": 76694101,
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "kungfu",
+        "name": "太极奶蛙",
+        "width": 384,
+        "height": 448,
+        "idle": "idle.png",
+        "eyes": [
+          {
+            "x": 167.5,
+            "y": 120.5,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "x": 209.5,
+            "y": 116.5,
+            "width": 7,
+            "height": 19
+          }
+        ],
+        "belly": {
+          "x": 139,
+          "y": 215,
+          "width": 153,
+          "height": 127
+        },
+        "source": "用户提供的手机录屏，仅作本机动作包",
+        "actions": [
+          {
+            "id": "taichi",
+            "name": "太极推掌",
+            "frames": 352,
+            "fps": 30,
+            "prefix": "actions/taichi/",
+            "endPose": "idle",
+            "sourceStart": 29.8,
+            "sourceEnd": 41.55,
+            "audio": "audio/taichi.wav"
+          },
+          {
+            "id": "greeting",
+            "name": "合掌致意",
+            "frames": 100,
+            "fps": 30,
+            "prefix": "actions/greeting/",
+            "endPose": "idle",
+            "sourceStart": 41.55,
+            "sourceEnd": 44.85
+          },
+          {
+            "id": "wave",
+            "name": "招手问好",
+            "frames": 364,
+            "fps": 30,
+            "prefix": "actions/wave/",
+            "endPose": "idle",
+            "sourceStart": 49.65,
+            "sourceEnd": 61.8
+          },
+          {
+            "id": "press-reaction",
+            "name": "经典站姿注视片刻，再回太极",
+            "prefix": "actions/press-reaction/",
+            "frames": 94,
+            "fps": 60,
+            "endPose": "idle"
+          }
+        ],
+        "colorGamma": 1,
+        "colorGreen": 1,
+        "colorBlue": 1,
+        "headReactionAction": "press-reaction",
+        "headReactionSeamless": true,
+        "motionRevision": "crisp-classic-gaze-hold-1p2s-94frames",
+        "colorReference": "classic-yellow-20261022"
+      }
+    }
+  ]
+}
