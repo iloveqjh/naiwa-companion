@@ -1,5 +1,6 @@
 {
   "windows_powershell_restore": "passed",
+  "multipart_reassembly": "passed",
   "restored_files": 7,
   "all_restored_hashes": "passed",
   "all_three_theme_paths": "passed",

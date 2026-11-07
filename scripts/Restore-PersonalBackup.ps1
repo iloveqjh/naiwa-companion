@@ -14,6 +14,16 @@ param(
     [string]$DataDirectory
 )
 $ErrorActionPreference = 'Stop'
+$temporaryFiles = New-Object 'System.Collections.Generic.List[string]'
+$splitIndex = @{}
+
+function Clear-BackupTemporaryFiles {
+    # 列表仅来自本脚本创建的随机临时文件，不递归删除目录。
+    foreach ($temporaryFile in $temporaryFiles) {
+        if ([IO.File]::Exists($temporaryFile)) { [IO.File]::Delete($temporaryFile) }
+    }
+}
+trap { Clear-BackupTemporaryFiles; throw }
 
 function Get-BackupSHA256 {
     param([string]$LiteralFile)
@@ -40,6 +50,38 @@ function Get-ContainedPath {
     return $fileFull
 }
 
+function Resolve-BackupSource {
+    param([string]$RelativeFile, [string]$ExpectedHash)
+    $normalFile = Get-ContainedPath $backupFull $RelativeFile
+    if (Test-Path -LiteralPath $normalFile -PathType Leaf) { return $normalFile }
+    $entry = $splitIndex[$RelativeFile.Replace('\', '/')]
+    if (-not $entry -or $entry.sha256 -ne $ExpectedHash -or $entry.bytes -gt 268435456) {
+        throw ('缺少有效的完整文件或分片清单：' + $RelativeFile)
+    }
+    # 在系统临时文件中重组；目标程序目录在整批校验通过前保持不变。
+    $assembled = [IO.Path]::GetTempFileName()
+    $temporaryFiles.Add($assembled)
+    $writer = [IO.File]::Open($assembled, [IO.FileMode]::Create, [IO.FileAccess]::Write)
+    $totalBytes = [long]0
+    try {
+        foreach ($part in @($entry.parts)) {
+            $partFile = Get-ContainedPath $backupFull $part.path
+            if (-not (Test-Path -LiteralPath $partFile -PathType Leaf)) { throw '备份缺少分片。' }
+            if ((Get-Item -LiteralPath $partFile).Length -ne $part.bytes -or (Get-BackupSHA256 $partFile) -ne $part.sha256) {
+                throw '备份分片校验失败，未开始恢复。'
+            }
+            $reader = [IO.File]::OpenRead($partFile)
+            try { $reader.CopyTo($writer) } finally { $reader.Dispose() }
+            $totalBytes += $part.bytes
+        }
+    }
+    finally { $writer.Dispose() }
+    if ($totalBytes -ne $entry.bytes -or (Get-BackupSHA256 $assembled) -ne $ExpectedHash) {
+        throw '重组后完整文件校验失败，未开始恢复。'
+    }
+    return $assembled
+}
+
 $backupFull = [IO.Path]::GetFullPath($BackupRoot)
 $programFull = [IO.Path]::GetFullPath($ProgramDirectory)
 if (-not (Test-Path -LiteralPath $backupFull -PathType Container)) { throw '找不到备份目录。' }
@@ -57,12 +99,18 @@ foreach ($petProcess in @(Get-Process -Name NaiwaCompanion -ErrorAction Silently
 
 $themeInfo = Get-Content -LiteralPath (Join-Path $backupFull 'themes-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $backupInfo = Get-Content -LiteralPath (Join-Path $backupFull 'backup-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$splitManifest = Join-Path $backupFull 'large-files-manifest.json'
+if (Test-Path -LiteralPath $splitManifest -PathType Leaf) {
+    $splitInfo = Get-Content -LiteralPath $splitManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($splitInfo.version -ne 1) { throw '不支持此分片清单版本。' }
+    foreach ($splitEntry in @($splitInfo.files)) { $splitIndex[$splitEntry.path] = $splitEntry }
+}
 $copyItems = New-Object 'System.Collections.Generic.List[object]'
 foreach ($theme in @($themeInfo.themes)) {
     if ($theme.folder -notmatch '^[a-z0-9-]+$') { throw '主题目录名称不合法。' }
     $relative = 'themes/' + $theme.folder + '/theme.nct'
     $copyItems.Add([pscustomobject]@{
-        Source = Get-ContainedPath $backupFull $relative
+        Source = Resolve-BackupSource $relative ([string]$theme.sha256)
         Destination = Get-ContainedPath $programFull $relative
         Hash = [string]$theme.sha256
         Kind = 'theme'
@@ -70,7 +118,7 @@ foreach ($theme in @($themeInfo.themes)) {
 }
 foreach ($entry in @($backupInfo.files | Where-Object { $_.path -like 'classic-assets/*' })) {
     $copyItems.Add([pscustomobject]@{
-        Source = Get-ContainedPath $backupFull $entry.path
+        Source = Resolve-BackupSource $entry.path ([string]$entry.sha256)
         Destination = Get-ContainedPath $programFull ([IO.Path]::GetFileName($entry.path))
         Hash = [string]$entry.sha256
         Kind = 'classic-asset'
@@ -80,7 +128,7 @@ if ($RestorePersonalData) {
     $dataFull = [IO.Path]::GetFullPath($DataDirectory)
     foreach ($entry in @($backupInfo.files | Where-Object { $_.path -like 'user-data/current/*.json' })) {
         $copyItems.Add([pscustomobject]@{
-            Source = Get-ContainedPath $backupFull $entry.path
+            Source = Resolve-BackupSource $entry.path ([string]$entry.sha256)
             Destination = Get-ContainedPath $dataFull ([IO.Path]::GetFileName($entry.path))
             Hash = [string]$entry.sha256
             Kind = 'personal-data'
@@ -95,7 +143,7 @@ foreach ($item in $copyItems) {
     $actualHash = Get-BackupSHA256 $item.Source
     if ($actualHash -ne $item.Hash) { throw ('文件校验失败，未开始恢复：' + $item.Source) }
 }
-if (-not $PSCmdlet.ShouldProcess($programFull, '恢复已经完整校验的主题及所选个人信息')) { return }
+if (-not $PSCmdlet.ShouldProcess($programFull, '恢复已经完整校验的主题及所选个人信息')) { Clear-BackupTemporaryFiles; return }
 
 $restored = @()
 foreach ($item in $copyItems) {
@@ -115,4 +163,5 @@ foreach ($item in $copyItems) {
 }
 $result = [pscustomobject]@{ RestoredAtUtc = [DateTime]::UtcNow.ToString('o'); Files = $restored }
 $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $programFull 'migration-restored.json') -Encoding UTF8
+Clear-BackupTemporaryFiles
 Write-Output $result
